@@ -23,14 +23,18 @@ UC_genes <- as.character(genes_phy[genes_phy$Age == "UC", "GeneID"])
 EM_genes <- as.character(genes_phy[genes_phy$Age == "EM", "GeneID"])
 MM_genes <- as.character(genes_phy[genes_phy$Age == "MM", "GeneID"])
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
-
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")  
 
 ##Select CNVs that are in more focal regions
 ##Calculate percentage of chromosome affected when a gene is altered
 
-context_of_CNVs <- vector()
+
 for(tumour in tumours){
+  context_of_CNVs <- vector()
+  aveg_context_of_CNVs <- vector()
   
   local_amp <- CNVs_curated[[tumour]]$amplifications
   local_del <- CNVs_curated[[tumour]]$deletions
@@ -77,26 +81,31 @@ for(tumour in tumours){
     }
     print(chr)
   }
-  print(tumour)
-}
-
-
-##Average ratio (context) across patients
-aveg_context_of_CNVs <- vector()
-for(tumour in tumours){
   local_context_of_CNVs <- context_of_CNVs[context_of_CNVs$tumour == tumour,]
   local_aveg_context_of_CNVs <- aggregate(Ratio ~ genes_with_CNV+CNV+Chr+tumour, context_of_CNVs, median)
   
   aveg_context_of_CNVs <- rbind(aveg_context_of_CNVs, local_aveg_context_of_CNVs)
+  
+  aveg_context_of_CNVs$Gene_age <- genes_phy[match(aveg_context_of_CNVs$genes_with_CNV, genes_phy$GeneID), "Age"]
+  colnames(aveg_context_of_CNVs) <- c("Genes","CNV","Chr","Tumour","Ratio","Gene_age")
+  save(aveg_context_of_CNVs, file=paste("aveg_context_of_CNVs_median_",
+  tumour, ".Rdata", sep=""))
+  
   print(tumour)
+  
 }
 
-aveg_context_of_CNVs$Gene_age <- genes_phy[match(aveg_context_of_CNVs$genes_with_CNV, genes_phy$GeneID), "Age"]
-colnames(aveg_context_of_CNVs) <- c("Genes","CNV","Chr","Tumour","Ratio","Gene_age")
-save(aveg_context_of_CNVs, file="aveg_context_of_CNVs_median.Rdata")
+aveg_context_of_CNVs_temp <- vector()
+for(tumour in tumours){
+  
+  load(paste("aveg_context_of_CNVs_median_",
+        tumour, ".Rdata", sep=""))
+  
+  aveg_context_of_CNVs_temp <- rbind(aveg_context_of_CNVs_temp,
+                                     aveg_context_of_CNVs)
+}
 
-
-load("aveg_context_of_CNVs_median.Rdata")
+aveg_context_of_CNVs <- aveg_context_of_CNVs_temp
 
 first_quantile_cutoff <- vector()
 par(mfrow=c(2,1))
