@@ -16,7 +16,7 @@ EM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 4:9),1])
 MM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 10:16),1])
 
 
-network <- load_TTRUST(); database <- "TTRUST"
+network <- load_TRRUST(); database <- "TRRUST"
 
 network <- load_RegNetwork(); database <- "RegNetwork"
 
@@ -81,7 +81,7 @@ save(regulator_classification,
 
 #####All regulators
 all_regulators <- vector()
-for(database in c("TTRUST", "RegNetwork", "PathwayCommons")){
+for(database in c("TRRUST", "RegNetwork", "PathwayCommons")){
   load(paste("regulator_classification_", database, ".Rdata", sep=""))
   
   all_regulators <- unique(c(all_regulators, regulator_classification$Regulator))  
@@ -102,7 +102,7 @@ rownames(regulators_df) <- reg_class_PC$Regulator
 ##Number databases concordant
 
 for(reg in all_regulators){
-  for(database in c("TTRUST", "RegNetwork", "PathwayCommons")){
+  for(database in c("TRRUST", "RegNetwork", "PathwayCommons")){
     load(paste("regulator_classification_", database, ".Rdata", sep=""))
     temp <- regulator_classification[regulator_classification$Regulator == reg,]
     if(nrow(temp) > 0){
@@ -110,7 +110,6 @@ for(reg in all_regulators){
                     colnames(regulators_df) == temp$Regulator_class] <- regulators_df[rownames(regulators_df) == reg,
                                                                                       colnames(regulators_df) == temp$Regulator_class]+1
     }
-    
   }
 }
 
