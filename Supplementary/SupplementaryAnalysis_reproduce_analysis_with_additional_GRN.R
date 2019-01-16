@@ -11,7 +11,10 @@ library(ggsci)
 
 source("helper_functions.R")
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")
 
 genes_phy <- read.csv("gene_phylostrata.txt")  ###File with gene name, entrez and phylostratum as column
 genes_phy$Age <- ifelse(genes_phy$Phylostrata %in% 1:3, "UC",
@@ -62,5 +65,5 @@ length(unique(network$Gene1))
 length(unique(network$Gene2))
 reproduce_results_other_databases_fig_1_2(network, "PathwayCommons")
 reproduce_results_figure_3C("PathwayCommons")
-reproduce_results_figure_4A(network, "PathwayCommons")
+#reproduce_results_figure_4A(network, "PathwayCommons")
 
