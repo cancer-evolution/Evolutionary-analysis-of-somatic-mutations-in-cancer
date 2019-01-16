@@ -9,7 +9,6 @@ library(ggsci)
 source("helper_functions.R")
 
 load("CNVs_curated2.Rdata")
-load("CNV_classification.Rdata")
 load("patients_with_CNV_info.Rdata")
 
 genes_phy <- read.csv("gene_phylostrata.txt")  ###File with gene name, entrez and phylostratum as column
@@ -22,40 +21,58 @@ UC_genes <- as.character(genes_phy_categorical[genes_phy_categorical$Phylostrata
 EM_genes <- as.character(genes_phy_categorical[genes_phy_categorical$Phylostrata == "EM", "GeneID"])
 MM_genes <- as.character(genes_phy_categorical[genes_phy_categorical$Phylostrata == "MM", "GeneID"])
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM") 
 
 ##Load expression data
 expression <- list()
 for(tumour in tumours){
-  for(sample_type in c("normal", "tumour")){
-    exp <- read.delim() ##Load normalized gene expression data from TCGA
-    if (sample_type == "normal"){
-      colnames(exp)[2:ncol(exp)] <- substr(colnames(exp)[2:ncol(exp)],9,12)
-    } else{
-      colnames(exp)[2:ncol(exp)] <- substr(colnames(exp)[2:ncol(exp)],9,12)
-    }
-    samples_low_correlation <- readLines() #Load list of samples with low correlation with other samples
-    if (substr(samples_low_correlation[1],9,12) != "")  #if there are samples to be removed
-    {
-      exp <- exp[,!(substr(colnames(exp),1,4) %in% substr(samples_low_correlation,9,12))]
-    }
-    
-    all_genes <- as.character(exp[,1])
-    
-    all_genes <- unlist(strsplit(all_genes, "\\|"))[seq(1, length(all_genes)*2, 2)]
-    
-    genes_remove <- c("?", "SLC35E2")
-    genes_remove_index <- which(all_genes %in% genes_remove)
-    all_genes <- all_genes[-genes_remove_index]
-    
-    
-    temp_exp <- exp[,2:ncol(exp)]
-    temp_exp <- temp_exp[-genes_remove_index, ]
-    rownames(temp_exp) <- all_genes
- 
-    expression[[tumour]][[sample_type]] <- temp_exp
+  path <- paste(tumour, "/gdac.broadinstitute.org_", tumour, 
+                ".Merge_rnaseqv2__illuminahiseq_rnaseqv2__unc_edu__Level_3__RSEM_genes_normalized__data.Level_3.2016012800.0.0/", 
+                tumour, 
+                ".rnaseqv2__illuminahiseq_rnaseqv2__unc_edu__Level_3__RSEM_genes_normalized__data.data.txt",
+                sep="")
+  
+  exp <- read.delim(path) ##Load normalized gene expression data from TCGA
+  exp <- exp[-1,]
+  
+  exp_normal <- exp[,substr(colnames(exp), 14, 16) %in% c("11A", "11B", "11C")]
+  exp_tumour <- exp[,substr(colnames(exp), 14, 16) %in% c("01A", "01B", "01C", "01D")]
+  
+  if(class(exp_normal) != "factor"){  ##If there is only 1 sample, ignore
+    colnames(exp_normal) <- substr(colnames(exp_normal),9,12)
   }
+  colnames(exp_tumour) <- substr(colnames(exp_tumour),9,12)
+  
+  all_genes <- as.character(exp[,1])
+  
+  all_genes <- unlist(strsplit(all_genes, "\\|"))[seq(1, length(all_genes)*2, 2)]
+  
+  genes_remove <- c("?", "SLC35E2")
+  genes_remove_index <- which(all_genes %in% genes_remove)
+  all_genes <- all_genes[-genes_remove_index]
+  
+  if(class(exp_normal) != "factor"){ 
+    exp_normal <- exp_normal[-genes_remove_index,]
+  }
+  
+  exp_tumour <- exp_tumour[-genes_remove_index,]
+  
+  if(!is.null(nrow(exp_normal))){
+    rownames(exp_normal) <- all_genes
+  }
+  if(!is.null(nrow(exp_tumour))){
+    rownames(exp_tumour) <- all_genes
+  }
+  
+  expression[[tumour]][["normal"]] <- exp_normal
+  expression[[tumour]][["tumour"]] <- exp_tumour
+  print(tumour)
+  
 }
+
 
 expression_pat <- list()
 for(tumour in tumours){
@@ -66,8 +83,11 @@ for(tumour in tumours){
   patients_to_keep <- patients_to_keep[patients_to_keep %in% patients_normal]
   patients_to_keep <- patients_to_keep[patients_to_keep %in% patients_tumour]
   
-  expression_pat[[tumour]][["tumour"]] <- expression[[tumour]][["tumour"]][,colnames(expression[[tumour]][["tumour"]]) %in% patients_to_keep]
-  expression_pat[[tumour]][["normal"]] <- expression[[tumour]][["normal"]][,colnames(expression[[tumour]][["normal"]]) %in% patients_to_keep]
+  if(length(patients_to_keep) != 0){
+    expression_pat[[tumour]][["tumour"]] <- expression[[tumour]][["tumour"]][,colnames(expression[[tumour]][["tumour"]]) %in% patients_to_keep]
+    expression_pat[[tumour]][["normal"]] <- expression[[tumour]][["normal"]][,colnames(expression[[tumour]][["normal"]]) %in% patients_to_keep]
+    print(tumour)
+  }
 }
 
 
@@ -92,7 +112,7 @@ for(tumour in tumours){
   
   patient_ratios[[tumour]] <- vector()
   for(i in 1:length(samples)){
-    patient_ratio <- local_tumour_exp[,i]/local_normal_exp[,i]
+    patient_ratio <- as.numeric(as.character(local_tumour_exp[,i]))/as.numeric(as.character(local_normal_exp[,i]))
     patient_ratios[[tumour]] <- cbind(patient_ratios[[tumour]], patient_ratio)
   }
  colnames(patient_ratios[[tumour]]) <- samples
@@ -101,8 +121,12 @@ for(tumour in tumours){
 }
 #save(patient_ratios, file="patient_ratios.Rdata")
 
-p_values_df <- vector()
+##Only works if there is an overlap of patients with tumour and normal expression samples 
+##and with CNV data
+
+
 for(tumour in tumours){
+  p_values_list <- list()
   local_amp <- CNVs_curated[[tumour]]$amplifications
   local_del <- CNVs_curated[[tumour]]$deletions
   
@@ -114,26 +138,43 @@ for(tumour in tumours){
   
   genes_in_samples <- rownames(patient_ratios[[tumour]])
   
-  amp_genes <- amp_genes[amp_genes %in% genes_in_samples]
-  del_genes <- del_genes[del_genes %in% genes_in_samples]
+  if(length(genes_in_samples) != 0){
+    amp_genes <- amp_genes[amp_genes %in% genes_in_samples]
+    del_genes <- del_genes[del_genes %in% genes_in_samples]
+    
+    amp_pvalues <- calculate_diff_exp_CNV2(amp_genes, local_amp, "Amp")
+    del_pvalues <- calculate_diff_exp_CNV2(del_genes, local_del, "Del")
+    
+    if(nrow(amp_pvalues) != 0){
+      amp_pvalues <- amp_pvalues[!is.na(amp_pvalues$Gene_age),]
+      amp_pvalues$adj_p <- p.adjust(amp_pvalues$p_val, method="BH")
+    }
+    if(nrow(del_pvalues) != 0){
+      del_pvalues <- del_pvalues[!is.na(del_pvalues$Gene_age),]
+      del_pvalues$adj_p <- p.adjust(del_pvalues$p_val, method="BH")
+    }
+    p_values_list[[tumour]] <- rbind(amp_pvalues, del_pvalues)
+    
+  }
   
-  amp_pvalues <- calculate_diff_exp_CNV2(amp_genes, local_amp, "Amp")
-  del_pvalues <- calculate_diff_exp_CNV2(del_genes, local_del, "Del")
-  
-  amp_pvalues <- amp_pvalues[!is.na(amp_pvalues$Gene_age),]
-  del_pvalues <- del_pvalues[!is.na(del_pvalues$Gene_age),]
-  
-  amp_pvalues$adj_p <- p.adjust(amp_pvalues$p_val, method="BH")
-  del_pvalues$adj_p <- p.adjust(del_pvalues$p_val, method="BH")
-  
-  p_values_df <- rbind(p_values_df, amp_pvalues, del_pvalues)
+  save(p_values_list, file=paste("CNV_exp_p_values_", tumour, ".Rdata", sep=""))
   print(tumour)
+}
+
+p_values_df <- vector()
+for(tumour in tumours){
+  load(paste("CNV_exp_p_values_", tumour, ".Rdata", sep=""))
+  p_values_df <- rbind(p_values_df, p_values_list[[tumour]])
 }
 
 #save(p_values_df, file="CNV_exp_p_values_df.Rdata")
 
 load("CNV_exp_p_values_df.Rdata")
 load("patient_ratios.Rdata")
+
+for(tumour in tumours){
+  print(nrow(patient_ratios[[tumour]]))
+}
 
 ##Use only targets
 
@@ -147,7 +188,6 @@ for(tumour in tumours){
   patient_ratios[[tumour]] <- patient_ratios[[tumour]][rownames(patient_ratios[[tumour]]) %in% targets,]
   
 }
-
 
 p_values_df_sig <- p_values_df[p_values_df$adj_p < 0.05,]
 
@@ -281,12 +321,15 @@ per_sig_reg_tar$Per_sig[is.na(per_sig_reg_tar$Per_sig)] <- 0
 
 per_sig_reg_tar_cast <- vector()
 tar_greater_all <- vector()
-for(tumour in tumours){
+for(tumour in as.character(per_sig_reg_tar$Tumour)){
   for(CNV in c("Amp", "Del")){
     temp <- per_sig_reg_tar[per_sig_reg_tar$Tumour == tumour,]
     temp <- temp[temp$CNV == CNV,]
     
     tar_greater <- temp$Per_sig[temp$Class == "Target"] > temp$Per_sig[temp$Class == "Regulator"]
+    if(!tar_greater %in% c(TRUE, FALSE)){
+      print(tumour)
+    }
     tar_greater_all <- rbind(tar_greater_all, c(tumour, CNV, tar_greater))
     per_sig_reg_tar_cast <- rbind(per_sig_reg_tar_cast,
                                   c(tumour, CNV, temp$Per_sig[temp$Class == "Regulator"], temp$Per_sig[temp$Class == "Target"]))
@@ -306,9 +349,25 @@ per_sig_reg_tar_cast$Per_tar <- as.numeric(as.character(per_sig_reg_tar_cast$Per
 per_sig_reg_tar_cast$Diff <- per_sig_reg_tar_cast$Per_tar-per_sig_reg_tar_cast$Per_reg
 
 per_sig_reg_tar_cast$Tumour <- factor(per_sig_reg_tar_cast$Tumour, levels=tumours)
+per_sig_reg_tar_cast$Tumour <- droplevels(per_sig_reg_tar_cast$Tumour)
+per_sig_reg_tar_cast <- unique(per_sig_reg_tar_cast)
+
+##Exclude tumour types with no regulators or targets DE
+
+for(tumour in tumours){
+  index <- which(per_sig_reg_tar_cast$Tumour == tumour)
+  for(i in index){
+    if(sum(per_sig_reg_tar_cast[i,3:5] == 0) == 3){
+      per_sig_reg_tar_cast <- per_sig_reg_tar_cast[-i,]
+    }
+  }
+  
+  
+}
+
 
 pdf("Supp4_Diff_expressed_targets_regulators.pdf",
-    height=4, width=8)
+    height=5, width=11)
 g <- ggplot(per_sig_reg_tar_cast, aes(x=Tumour, y=Diff))+
   geom_bar(aes(fill=Tumour), stat='identity')+
   geom_hline(yintercept=0)+
@@ -393,17 +452,28 @@ print(g)
 dev.off()
 
 
-per_tar_de_relevant_median_UC <- per_tar_de_relevant_median[per_tar_de_relevant_median$Regulator_class == "UC_downstream",]
+per_tar_de_relevant_median_UC <- per_tar_de_relevant_median_reg[per_tar_de_relevant_median_reg$Regulator_class == "UC_downstream",]
 wilcox.test(per_tar_de_relevant_median_UC[per_tar_de_relevant_median_UC$CNV == "Amp","Per_de"],
             per_tar_de_relevant_median_UC[per_tar_de_relevant_median_UC$CNV == "Del","Per_de"], alternative="greater")
+
 
 median(per_tar_de_relevant_median_UC[per_tar_de_relevant_median_UC$CNV == "Amp","Per_de"])
 median(per_tar_de_relevant_median_UC[per_tar_de_relevant_median_UC$CNV == "Del","Per_de"])
 
-per_tar_de_relevant_median_EM <- per_tar_de_relevant_median[per_tar_de_relevant_median$Regulator_class == "EM_downstream",]
+
+mean(per_tar_de_relevant_median_UC[,"Per_de"])
+
+per_tar_de_relevant_median_EM <- per_tar_de_relevant_median_reg[per_tar_de_relevant_median_reg$Regulator_class == "EM_downstream",]
 wilcox.test(per_tar_de_relevant_median_EM[per_tar_de_relevant_median_EM$CNV == "Del","Per_de"],
             per_tar_de_relevant_median_EM[per_tar_de_relevant_median_EM$CNV == "Amp","Per_de"], alternative="greater")
+median(per_tar_de_relevant_median_EM[per_tar_de_relevant_median_EM$CNV == "Amp","Per_de"])
+median(per_tar_de_relevant_median_EM[per_tar_de_relevant_median_EM$CNV == "Del","Per_de"])
 
-per_tar_de_relevant_median_mixed <- per_tar_de_relevant_median[per_tar_de_relevant_median$Regulator_class == "Mixed_downstream",]
+per_tar_de_relevant_median_mixed <- per_tar_de_relevant_median_reg[per_tar_de_relevant_median_reg$Regulator_class == "Mixed_downstream",]
 wilcox.test(per_tar_de_relevant_median_mixed[per_tar_de_relevant_median_mixed$CNV == "Del","Per_de"],
             per_tar_de_relevant_median_mixed[per_tar_de_relevant_median_mixed$CNV == "Amp","Per_de"])
+
+mean(per_tar_de_relevant_median_mixed[,"Per_de"])
+median(per_tar_de_relevant_median_mixed[per_tar_de_relevant_median_mixed$CNV == "Amp","Per_de"])
+median(per_tar_de_relevant_median_mixed[per_tar_de_relevant_median_mixed$CNV == "Del","Per_de"])
+
