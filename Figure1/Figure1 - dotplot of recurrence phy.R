@@ -52,4 +52,3 @@ g <- ggplot(rank_recurrent_melt, aes(y=variable, x=Phylostrata))+
         panel.grid.minor = element_blank())
 print(g)
 dev.off()
-
