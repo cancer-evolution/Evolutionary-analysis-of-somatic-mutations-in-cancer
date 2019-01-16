@@ -38,7 +38,10 @@ names(regulator_targets) <- regulators
 load("variants_LoF.Rdata")
 load("variants_missense.Rdata")
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")
 
 load("patients_with_mut_info.Rdata")
 
@@ -69,37 +72,53 @@ for(tumour in tumours){
 
 expression <- list()
 for(tumour in tumours){
-  for(sample_type in c("normal", "tumour")){
-    exp <- read.delim()  ##Load normalized gene expression data from TCGA
-    if (sample_type == "normal"){
-      colnames(exp)[2:ncol(exp)] <- substr(colnames(exp)[2:ncol(exp)],9,12)
-    } else{
-      colnames(exp)[2:ncol(exp)] <- substr(colnames(exp)[2:ncol(exp)],9,12)
-    }
-    samples_low_correlation <- ##Load samples of low correlation with other samples that are to be removed
-    if (substr(samples_low_correlation[1],9,12) != "")  #if there are samples to be removed
-    {
-      exp <- exp[,!(substr(colnames(exp),1,4) %in% substr(samples_low_correlation,9,12))]
-    }
-    
-    all_genes <- as.character(exp[,1])
-    
-    all_genes <- unlist(strsplit(all_genes, "\\|"))[seq(1, length(all_genes)*2, 2)]
-    
-    genes_remove <- c("?", "SLC35E2")
-    genes_remove_index <- which(all_genes %in% genes_remove)
-    all_genes <- all_genes[-genes_remove_index]
-    
-    
-    temp_exp <- exp[,2:ncol(exp)]
-    temp_exp <- temp_exp[-genes_remove_index, ]
-    rownames(temp_exp) <- all_genes
-    
-    expression[[tumour]][[sample_type]] <- temp_exp
+  path <- paste(tumour, "/gdac.broadinstitute.org_", tumour, 
+                ".Merge_rnaseqv2__illuminahiseq_rnaseqv2__unc_edu__Level_3__RSEM_genes_normalized__data.Level_3.2016012800.0.0/", 
+                tumour, 
+                ".rnaseqv2__illuminahiseq_rnaseqv2__unc_edu__Level_3__RSEM_genes_normalized__data.data.txt",
+                sep="")
+  
+  exp <- read.delim(path) ##Load normalized gene expression data from TCGA
+  exp <- exp[-1,]
+  
+  exp_normal <- exp[,substr(colnames(exp), 14, 16) %in% c("11A", "11B", "11C")]
+  exp_tumour <- exp[,substr(colnames(exp), 14, 16) %in% c("01A", "01B", "01C", "01D")]
+  
+  if(class(exp_normal) != "factor"){  ##If there is only 1 sample, ignore
+    colnames(exp_normal) <- substr(colnames(exp_normal),9,12)
   }
+  colnames(exp_tumour) <- substr(colnames(exp_tumour),9,12)
+  
+  all_genes <- as.character(exp[,1])
+    
+  all_genes <- unlist(strsplit(all_genes, "\\|"))[seq(1, length(all_genes)*2, 2)]
+    
+  genes_remove <- c("?", "SLC35E2")
+  genes_remove_index <- which(all_genes %in% genes_remove)
+  all_genes <- all_genes[-genes_remove_index]
+    
+  if(class(exp_normal) != "factor"){ 
+    exp_normal <- exp_normal[-genes_remove_index,]
+  }
+  
+  exp_tumour <- exp_tumour[-genes_remove_index,]
+  
+  if(!is.null(nrow(exp_normal))){
+    rownames(exp_normal) <- all_genes
+  }
+  if(!is.null(nrow(exp_tumour))){
+    rownames(exp_tumour) <- all_genes
+  }
+  
+  expression[[tumour]][["normal"]] <- exp_normal
+  expression[[tumour]][["tumour"]] <- exp_tumour
+  print(tumour)
+  
 }
 
+
 expression_pat <- list()
+number_pat_to_keep <- vector()
 for(tumour in tumours){
   patients_to_keep <- patients_with_mut_info[[tumour]]
   patients_normal <- colnames(expression[[tumour]][["normal"]])
@@ -108,9 +127,17 @@ for(tumour in tumours){
   patients_to_keep <- patients_to_keep[patients_to_keep %in% patients_normal]
   patients_to_keep <- patients_to_keep[patients_to_keep %in% patients_tumour]
   
-  expression_pat[[tumour]][["tumour"]] <- expression[[tumour]][["tumour"]][,colnames(expression[[tumour]][["tumour"]]) %in% patients_to_keep]
-  expression_pat[[tumour]][["normal"]] <- expression[[tumour]][["normal"]][,colnames(expression[[tumour]][["normal"]]) %in% patients_to_keep]
+  number_pat_to_keep <- c(number_pat_to_keep, length(patients_to_keep))
+  
+  if(length(patients_to_keep) != 0){
+    expression_pat[[tumour]][["tumour"]] <- expression[[tumour]][["tumour"]][,colnames(expression[[tumour]][["tumour"]]) %in% patients_to_keep]
+    expression_pat[[tumour]][["normal"]] <- expression[[tumour]][["normal"]][,colnames(expression[[tumour]][["normal"]]) %in% patients_to_keep]
+    print(tumour)
+  }
 }
+
+names(number_pat_to_keep) <- tumours
+
 
 
 #Are the patient names unique across tumour types? YES
@@ -153,7 +180,8 @@ for(regulator in regulators){
       expression_with_reg_mut <- expression_targets_with_mut[rownames(expression_targets_with_mut) == target,]
       expression_without_reg_mut <- expression_targets_without_mut[rownames(expression_targets_without_mut) == target,]
       
-      p <- wilcox.test(unlist(expression_with_reg_mut), unlist(expression_without_reg_mut))$p.val
+      p <- wilcox.test(as.numeric(as.character(unlist(expression_with_reg_mut))), 
+                       as.numeric(as.character(unlist(expression_without_reg_mut))))$p.val
       
       differential_expression_targets <- rbind(differential_expression_targets, c(regulator, target, p))
     }
@@ -161,6 +189,9 @@ for(regulator in regulators){
   print(regulator)
 }
 
+#save(differential_expression_targets, file="differential_expression_targets.Rdata")
+
+load("differential_expression_targets.Rdata")
 differential_expression_targets <- as.data.frame(differential_expression_targets)
 colnames(differential_expression_targets) <- c("Regulator", "Target", "Diff_exp")
 differential_expression_targets$Diff_exp <- as.numeric(as.character(differential_expression_targets$Diff_exp))
@@ -191,14 +222,13 @@ per_targets_diff_exp <- per_targets_diff_exp[!is.na(per_targets_diff_exp$Age),]
 
 per_targets_diff_exp_fraction <- per_targets_diff_exp
 
-per_targets_diff_exp_fraction$Fraction <- ifelse(per_targets_diff_exp_fraction$Percentage_of_targets_DE < 5, "<5%",
-                                                 ifelse(per_targets_diff_exp_fraction$Percentage_of_targets_DE < 20, "5-20%", ">20%"))
+per_targets_diff_exp_fraction$Fraction <- ifelse(per_targets_diff_exp_fraction$Percentage_of_targets_DE < 5, "<5%", ">5%")
 
 counts <- aggregate(Regulator ~ Age+Fraction, per_targets_diff_exp_fraction, length)
 
-counts$Fraction <- factor(counts$Fraction, levels=c("<5%", "5-20%", ">20%"))
+counts$Fraction <- factor(counts$Fraction, levels=c("<5%", ">5%"))
 
-counts$Age <- factor(counts$Age, levels=c("UC", "EM"))
+counts$Age <- factor(counts$Age, levels=c("UC", "EM", "MM"))
 
 
 ratio_of_fractions <- vector()
@@ -235,10 +265,10 @@ per_targets_diff_exp_fraction <- per_targets_diff_exp_fraction[per_targets_diff_
 
 counts_class <- aggregate(Regulator ~ Regulator_class+Fraction, per_targets_diff_exp_fraction, length)
 
-counts_class$Fraction <- factor(counts_class$Fraction, levels=c("<5%", "5-20%", ">20%"))
+counts_class$Fraction <- factor(counts_class$Fraction, levels=c("<5%", ">5%"))
 
 counts_class$Regulator_class <- factor(counts_class$Regulator_class, levels=c("UC_downstream", "Mixed_downstream",
-                                                                  "EM_downstream", "None"))
+                                                                  "EM_downstream", "MM_downstream", "None"))
 
 ##Divide EM genes in those that regulate EM and mixed neighbourhoods
 
@@ -249,43 +279,42 @@ per_targets_diff_exp_fraction$Age2 <- paste(per_targets_diff_exp_fraction$Age, p
 
 counts_class2 <- aggregate(Regulator ~ Age2+Fraction+Regulator_class+Age, per_targets_diff_exp_fraction, length)
 
-counts_class2$Fraction <- factor(counts_class2$Fraction, levels=c("<5%", "5-20%", ">20%"))
+counts_class2$Fraction <- factor(counts_class2$Fraction, levels=c("<5%", ">5%"))
 
-counts_class2$Age2 <- factor(counts_class2$Age2, levels=c("UC_UC_downstream","UC_Mixed_downstream","UC_EM_downstream", "EM_UC_downstream","EM_Mixed_downstream","EM_EM_downstream","UC_None"))
+counts_class2$Age2 <- factor(counts_class2$Age2, levels=c("UC_UC_downstream",
+                                                          "UC_Mixed_downstream",
+                                                          "UC_EM_downstream", 
+                                                          "EM_UC_downstream",
+                                                          "EM_Mixed_downstream",
+                                                          "EM_EM_downstream",
+                                                          "MM_EM_downstream",
+                                                          "UC_MM_downstream",
+                                                          "UC_None"))
 
 counts_class2 <- counts_class2[counts_class2$Regulator_class != "None",]
+counts_class2 <- counts_class2[counts_class2$Regulator_class != "MM_downstream",]
 
 
 counts_class2$Regulator_class <- factor(counts_class2$Regulator_class,
                                         levels=c("UC_downstream", "Mixed_downstream", "EM_downstream"))
-counts_class2$Age <- factor(counts_class2$Age, levels=c("EM", "UC"))
+counts_class2$Age <- factor(counts_class2$Age, levels=c("MM", "EM", "UC"))
 
 
-pdf("Figure3_Pie_chart_20.pdf",
+pdf("Figure3_Pie_chart_more_5.pdf",
     height=4, width=4)
-g <- ggplot(subset(counts_class2, Fraction == ">20%"), aes(x=1, y=Regulator))+
+g <- ggplot(subset(counts_class2, Fraction == ">5%"), aes(x=1, y=Regulator))+
   geom_bar(aes(fill=Regulator_class), stat='identity', position='stack')+
-  scale_fill_manual(values=c(Mixed_downstream="#EFC000FF",
+  scale_fill_manual(values=c(UC_downstream="#0073C2FF",
+                             Mixed_downstream="#EFC000FF",
                              EM_downstream="#868686FF"))+
-  ggtitle(">20%")+
+  ggtitle(">5%")+
   coord_polar("y")+
   theme_void()
 print(g)
 dev.off()
 
-pdf("Figure3_Pie_chart_5-20.pdf",
-    height=4, width=4)
-g <- ggplot(subset(counts_class2, Fraction == "5-20%"), aes(x=1, y=Regulator))+
-  geom_bar(aes(fill=Regulator_class), stat='identity', position='stack')+
-  scale_fill_manual(values=c(Mixed_downstream="#EFC000FF",
-                             EM_downstream="#868686FF"))+
-  ggtitle("5-20%")+
-  coord_polar("y")+
-  theme_void()
-print(g)
-dev.off()
 
-pdf("Figure3_Pie_chart_5.pdf",
+pdf("Figure3_Pie_chart_less_5.pdf",
     height=4, width=4)
 g <- ggplot(subset(counts_class2, Fraction == "<5%"), aes(x=1, y=Regulator))+
   geom_bar(aes(fill=Regulator_class), stat='identity', position='stack')+
@@ -298,10 +327,24 @@ g <- ggplot(subset(counts_class2, Fraction == "<5%"), aes(x=1, y=Regulator))+
 print(g)
 dev.off()
 
+sum(counts_class2$Regulator[counts_class2$Fraction == "<5%"]) ##51
+sum(counts_class2$Regulator[counts_class2$Fraction == ">5%"]) ##16
+##Mixed < 5: 22
+##Mixed > 5: 12
+fisher.test(cbind(c(12, 16), c(22,51)), alternative="greater")
 
-pdf("Figure3_Pie_chart_Mixed_20.pdf",
+#Of all the mixed ones: 34
+###12 are high impact, 22 low impact.
+
+fisher.test(cbind(c(12, 34), c(16,67)), alternative="greater")
+
+prop.test(x=c(12, 22), n=c(16, 51), alternative="greater")
+
+
+
+pdf("Figure3_Pie_chart_Mixed_more_5.pdf",
     height=4, width=4)
-g <- ggplot(subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction == ">20%"), aes(x=1, y=Regulator))+
+g <- ggplot(subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction == ">5%"), aes(x=1, y=Regulator))+
   geom_bar(aes(fill=Age), stat='identity', position='stack')+
   scale_fill_manual(values=c(UC="#F8766DFF",
                              EM="#00BA38FF"))+
@@ -311,19 +354,7 @@ print(g)
 dev.off()
 
 
-pdf("Figure3_Pie_chart_Mixed_5-20.pdf",
-    height=4, width=4)
-g <- ggplot(subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction == "5-20%"), aes(x=1, y=Regulator))+
-  geom_bar(aes(fill=Age), stat='identity', position='stack')+
-  scale_fill_manual(values=c(UC="#F8766DFF",
-                             EM="#00BA38FF"))+
-  coord_polar("y")+
-  theme_void()
-print(g)
-dev.off()
-
-
-pdf("Figure3_Pie_chart_Mixed_5.pdf",
+pdf("Figure3_Pie_chart_Mixed_less_5.pdf",
     height=4, width=4)
 g <- ggplot(subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction == "<5%"), aes(x=1, y=Regulator))+
   geom_bar(aes(fill=Age), stat='identity', position='stack')+
@@ -335,6 +366,6 @@ print(g)
 dev.off()
 
 
-subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction %in% c(">20%", "5-20%"))
+subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction %in% c(">5%"))
 subset(counts_class2, Regulator_class=="Mixed_downstream" & Fraction %in% c("<5%"))
 fisher.test(cbind(c(6,3), c(3,7)), alternative="greater")
