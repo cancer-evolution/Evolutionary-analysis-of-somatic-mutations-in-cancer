@@ -19,7 +19,11 @@ genes_phy$Age <- ifelse(genes_phy$Phylostrata %in% 1:3, "UC",
 UC_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 1:3),1])
 EM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 4:9),1])
 MM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 10:16),1])
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")  
 
 mutations_df <- load_mutations()
 
@@ -32,17 +36,20 @@ miss_df <- vector()
 lof_df <- vector()
 
 for(tumour in tumours){
+  print(tumour)
   local_mut <- mutations_df[mutations_df$Tumour == tumour,]
   
   missense <- as.character(local_mut[local_mut$Variant_type == "Missense", "Hugo_Symbol"])
   lof <- as.character(local_mut[local_mut$Variant_type == "LoF", "Hugo_Symbol"])
-  miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
-  lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
-  
-  all_miss <- c(all_miss, missense)
-  all_lof <- c(all_lof, lof)
+  if(length(missense) != 0){
+    miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
+    all_miss <- c(all_miss, missense)
+  }
+  if(length(lof) != 0){
+    lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
+    all_lof <- c(all_lof, lof)
+  }
 }
-
 
 
 ##Read in CNVs
@@ -96,15 +103,15 @@ only_del <- only_del[!(only_del %in% both_CNVs)]
 
 
 #Common alterations
-all_amp_common <- names(table(all_amp))[table(all_amp)>=3]
-all_del_common <- names(table(all_del))[table(all_del)>=3]
+all_amp_common <- names(table(all_amp))[table(all_amp)>=7]
+all_del_common <- names(table(all_del))[table(all_del)>=7]
 all_CNV_common_both <- all_amp_common[all_amp_common %in% all_del_common]
 all_amp_common <- all_amp_common[!(all_amp_common %in% all_CNV_common_both)]
 all_del_common <- all_del_common[!(all_del_common %in% all_CNV_common_both)]
 
 
-all_miss_common <- names(table(all_miss))[table(all_miss)>=3]
-all_lof_common <- names(table(all_lof))[table(all_lof)>=3]
+all_miss_common <- names(table(all_miss))[table(all_miss)>=7]
+all_lof_common <- names(table(all_lof))[table(all_lof)>=7]
 all_mut_common_both <- all_miss_common[all_miss_common %in% all_lof_common]
 all_miss_common <- all_miss_common[!(all_miss_common %in% all_mut_common_both)]
 all_lof_common <- all_lof_common[!(all_lof_common %in% all_mut_common_both)]
@@ -415,16 +422,3 @@ median(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "CNV","Per_EM"], 
 median(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "WT","Per_UC"])
 median(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "WT","Per_EM"], na.rm=TRUE)
 
-
-wilcox.test(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "Point","Per_EM"],
-            per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "CNV","Per_EM"], alternative="less")
-
-wilcox.test(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "Point","Per_UC"],
-            per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "CNV","Per_UC"], alternative="greater")
-
-
-wilcox.test(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "Point","Per_EM"],
-            per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "WT","Per_EM"], alternative="less")
-
-wilcox.test(per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "Point","Per_UC"],
-            per_UC_EM_downstream[per_UC_EM_downstream$Alt_binary == "WT","Per_UC"], alternative="greater")
