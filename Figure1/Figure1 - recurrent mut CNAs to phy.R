@@ -7,11 +7,12 @@ library(Biobase)
 library(clinfun)
 library(readr)
 
-source("CNV_functions.R")
 source('helper_functions.R')
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
-
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")  
 
 genes_phy <- read.csv("gene_phylostrata.txt")  ###File with gene name, entrez and phylostratum as column
 genes_phy_categorical <- genes_phy
@@ -51,7 +52,7 @@ number_each_phy <- aggregate(GeneID ~ Phylostrata, genes_phy, length)
 
 
 ##Mutations
-load("patients_with_Mut_info.Rdata")
+load("patients_with_mut_info.Rdata")
 sum(sapply(patients_with_mut_info, length))
 
 mutations_df <- load_mutations()
@@ -83,10 +84,26 @@ for(tumour in tumours){
                               Frequency=c(rep("Recurrent", 16),
                                           rep("Purified", 16)))
   
-  local_results$N_miss <- c(n_enriched_miss[,"Recurrent"][match(1:16, rownames(n_enriched_miss))],
-                            n_enriched_miss[,"Purified"][match(1:16, rownames(n_enriched_miss))])
-  local_results$N_lof <- c(n_enriched_lof[,"Recurrent"][match(1:16, rownames(n_enriched_lof))],
-                           n_enriched_lof[,"Purified"][match(1:16, rownames(n_enriched_lof))])
+  if("Recurrent" %in% local_mut_top_miss$Frequency & "Purified" %in% local_mut_top_miss$Frequency){
+    local_results$N_miss <- c(n_enriched_miss[,"Recurrent"][match(1:16, rownames(n_enriched_miss))],
+                              n_enriched_miss[,"Purified"][match(1:16, rownames(n_enriched_miss))])
+  }else if("Recurrent" %in% local_mut_top_miss$Frequency){
+    local_results$N_miss <- c(n_enriched_miss[,"Recurrent"][match(1:16, rownames(n_enriched_miss))])
+  }else{
+    local_results$N_miss <- c(n_enriched_miss[,"Purified"][match(1:16, rownames(n_enriched_miss))])
+  }
+  
+  if("Recurrent" %in% local_mut_top_lof$Frequency & "Purified" %in% local_mut_top_lof$Frequency){
+    local_results$N_lof <- c(n_enriched_lof[,"Recurrent"][match(1:16, rownames(n_enriched_lof))],
+                              n_enriched_lof[,"Purified"][match(1:16, rownames(n_enriched_lof))])
+  }else if("Recurrent" %in% local_mut_top_lof$Frequency){
+    local_results$N_lof <- c(n_enriched_lof[,"Recurrent"][match(1:16, rownames(n_enriched_lof))])
+  }else if("Purified" %in% local_mut_top_lof$Frequency){
+    local_results$N_lof <- c(n_enriched_lof[,"Purified"][match(1:16, rownames(n_enriched_lof))])
+  }else{
+    local_results$N_lof <- NA
+  }
+
   local_results$N_syn <- n_syn[match(1:16,names(n_syn))]
   
   n_mut_df <- rbind(n_mut_df, local_results)
@@ -106,6 +123,27 @@ n_mut_df$Fraction_genes_syn <- n_mut_df$N_genes_syn/n_mut_df$Total_genes
 
 temp_n_mut_df <- subset(n_mut_df, Frequency=="Recurrent")
 
+##How many phylostrata with at least 1 miss or LoF mutation?
+n_phy_with_miss_lof <- vector()
+for(tumour in tumours){
+ local_temp <- temp_n_mut_df[temp_n_mut_df$Tumour == tumour,]
+   
+ n_phy_with_miss_lof <- rbind(n_phy_with_miss_lof,
+                              c(tumour, sum(local_temp$Fraction_genes_miss != 0, na.rm=TRUE),
+ sum(local_temp$Fraction_genes_lof != 0, na.rm=TRUE)))
+ 
+}
+
+n_phy_with_miss_lof <- as.data.frame(n_phy_with_miss_lof)
+hist(as.numeric(as.character(n_phy_with_miss_lof$V2)), breaks=16)
+hist(as.numeric(as.character(n_phy_with_miss_lof$V3)), breaks=16)
+colnames(n_phy_with_miss_lof) <- c("Tumour", "N_phy_with_miss", "N_phy_with_lof")
+
+
+n_phy_with_miss_lof$N_phy_with_miss <- as.numeric(as.character(n_phy_with_miss_lof$N_phy_with_miss))
+n_phy_with_miss_lof$N_phy_with_lof <- as.numeric(as.character(n_phy_with_miss_lof$N_phy_with_lof))
+
+
 #Calculate ranks
 n_mut_df2 <- vector()
 for(tumour in tumours){
@@ -114,11 +152,19 @@ for(tumour in tumours){
   local_n_mut_df$Rank_miss1 <- rank(-local_n_mut_df$Fraction_genes_miss)
   local_n_mut_df$Rank_lof1 <- rank(-local_n_mut_df$Fraction_genes_lof)
   
+  local_n_mut_df[is.na(local_n_mut_df$Fraction_genes_miss), "Rank_miss1"] <- NA
+  local_n_mut_df[is.na(local_n_mut_df$Fraction_genes_lof), "Rank_lof1"] <- NA
+  
   n_mut_df2 <- rbind(n_mut_df2, local_n_mut_df)
 }
 
 enrichment_of_recurrent_mutations <- n_mut_df2 
 #save(enrichment_of_recurrent_mutations, file="enrichment_of_recurrent_mutations.Rdata")
+
+n_mut_df2$Phy_cat <- ifelse(n_mut_df2$Phylostrata %in% 1:3, "UC",
+                            ifelse(n_mut_df2$Phylostrata %in% 4:9, "EM", "MM"))
+n_mut_df2$Phy_cat <- factor(n_mut_df2$Phy_cat, levels=c("UC", "EM", "MM"))
+
 
 pdf("Figure1_freq_miss.pdf",
     height=2.5, width=6)
@@ -137,6 +183,22 @@ g <- ggplot(n_mut_df2, aes(x=Phylostrata, y = Rank_miss1))+
 print(g)
 dev.off()
 
+pdf("Figure1_freq_miss_boxplot.pdf",
+    height=2.5, width=6)
+g <- ggplot(n_mut_df2, aes(x=Phylostrata, y = Rank_miss1))+
+  geom_hline(yintercept=8, colour="darkgrey")+
+  geom_boxplot(aes(colour=Phy_cat))+
+  scale_y_reverse(breaks = 1:16)+
+  ylab("Ranked fraction of\ngenes with missense mutations")+
+  xlab("")+
+  geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Rank_miss1), method="loess", se=FALSE, colour="black", size=0.5)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+print(g)
+dev.off()
+
+
 pdf("Figure1_freq_lof.pdf",
     height=2.5, width=6)
 g <- ggplot(n_mut_df2, aes(x=Phylostrata, y = Rank_lof1))+
@@ -154,11 +216,64 @@ g <- ggplot(n_mut_df2, aes(x=Phylostrata, y = Rank_lof1))+
 print(g)
 dev.off()
 
+
+pdf("Figure1_freq_lof_boxplot.pdf",
+    height=2.5, width=6)
+g <- ggplot(n_mut_df2, aes(x=Phylostrata, y = Rank_lof1))+
+  geom_hline(yintercept=8, colour="darkgrey")+
+  geom_boxplot(aes(colour=Phy_cat))+
+  scale_y_reverse(breaks = 1:16)+
+  ylab("Ranked fraction of\ngenes with missense mutations")+
+  xlab("")+
+  geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Rank_lof1), method="loess", se=FALSE, colour="black", size=0.5)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+print(g)
+dev.off()
+
+
 aggregate(Rank_miss1 ~ Phylostrata, n_mut_df2, median)
 aggregate(Rank_lof1 ~ Phylostrata, n_mut_df2, median)
 
-View(n_mut_df2[n_mut_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_miss1")])
-View(n_mut_df2[n_mut_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_lof1")])
+
+
+##Missense
+tumours_enough_miss <- as.character(n_phy_with_miss_lof[n_phy_with_miss_lof$N_phy_with_miss >= 5,"Tumour"])
+View(n_mut_df2[intersect(which(n_mut_df2$Phylostrata %in% 4:9),
+                         which(n_mut_df2$Tumour %in% tumours_enough_miss)), c("Tumour", "Phylostrata", "Rank_miss1")])
+
+tumours_enough_lof <- as.character(n_phy_with_miss_lof[n_phy_with_miss_lof$N_phy_with_lof >= 5,"Tumour"])
+View(n_mut_df2[intersect(which(n_mut_df2$Phylostrata %in% 4:9),
+                         which(n_mut_df2$Tumour %in% tumours_enough_lof)), c("Tumour", "Phylostrata", "Rank_lof1")])
+
+
+length(n_phy_with_miss_lof[n_phy_with_miss_lof$N_phy_with_lof >= 5,"Tumour"])
+
+
+##Wilcoxon tests of the ranks of EM genes:
+EM_rank <- n_mut_df2[n_mut_df2$Phylostrata %in% 4:9,]
+not_EM_rank <- n_mut_df2[!(n_mut_df2$Phylostrata %in% 4:9),]
+
+miss_ranks_p <- vector()
+lof_ranks_p <- vector()
+for(tumour in tumours){
+  local_EM_ranks <- EM_rank[EM_rank$Tumour == tumour,]
+  local_not_EM_ranks <- not_EM_rank[not_EM_rank$Tumour == tumour,]
+  miss_ranks_p <- c(miss_ranks_p, 
+                    wilcox.test(local_EM_ranks$Rank_miss1, local_not_EM_ranks$Rank_miss1, alternative="less")$p.value)
+  if(tumour != "UVM"){
+    lof_ranks_p <- c(lof_ranks_p, 
+                     wilcox.test(local_EM_ranks$Rank_lof1, local_not_EM_ranks$Rank_lof1, alternative="less")$p.value)
+  }
+}
+
+sum(miss_ranks_p < 0.05)/length(miss_ranks_p)
+sum(lof_ranks_p < 0.05)/length(lof_ranks_p)
+
+
+
+
 
 p_values_fraction <- vector()
 for(tumour in tumours){
@@ -167,7 +282,11 @@ for(tumour in tumours){
   groups <- local_n_mut_df2$Phylostrata
   groups <- factor(groups,levels=1:16, ordered=TRUE) 
   p_miss <- jonckheere.test(g=groups, x=local_n_mut_df2$Fraction_genes_miss, alternative="decreasing")$p.value
-  p_lof <- jonckheere.test(g=groups, x=local_n_mut_df2$Fraction_genes_lof, alternative="decreasing")$p.value
+  if(tumour != "UVM"){
+    p_lof <- jonckheere.test(g=groups, x=local_n_mut_df2$Fraction_genes_lof, alternative="decreasing")$p.value
+  }else{
+    p_lof <- NA
+  }
   p_values_fraction <- rbind(p_values_fraction, c(tumour, p_miss, p_lof))
 }
 
@@ -177,6 +296,8 @@ colnames(p_values_fraction) <- c("Tumour", "p_miss", "p_lof")
 p_values_fraction[,2:3] <- apply(p_values_fraction[,2:3], 2, p.adjust, method="BH")
 
 
+sum(p_values_fraction[p_values_fraction$Tumour %in% tumours_enough_miss,"p_miss"] < 0.05)
+sum(p_values_fraction[p_values_fraction$Tumour %in% tumours_enough_lof,"p_lof"] < 0.05)
 
 
 ###CNAs
@@ -190,9 +311,11 @@ load("patients_with_CNV_info.Rdata")
 sum(sapply(patients_with_CNV_info, length))
 
 CNVs_df <- load_CNVs(only_focal="ANY")
-CNVs_df[CNVs_df$Genes == "TNFRSF17",]  ##and for all other genes to get their amp/del frequency
-CNVs_df[CNVs_df$Genes == "EGFR",]
+View(CNVs_df[CNVs_df$Genes == "TNFRSF17",])  ##and for all other genes to get their amp/del frequency
+View(CNVs_df[CNVs_df$Genes == "TP53",])
 mean(CNVs_df[CNVs_df$Genes == "TP53","Patients_del"])
+sum(CNVs_df[CNVs_df$Genes == "EGFR","Patients_amp"] > 0.10)
+sum(CNVs_df[CNVs_df$Genes == "TP53","Patients_del"] > 0.10)
 
 patient_frequency_CNV_df <- calculate_fraction_of_patients_with_CNV(CNVs_df)
 
@@ -210,6 +333,32 @@ for(tumour in tumours){
 
 View(n_CNV_df2[n_CNV_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_amp1")])
 View(n_CNV_df2[n_CNV_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_del1")])
+
+n_amp_high_rank <- vector()
+for(tumour in tumours){
+  local_temp <- n_CNV_df2[n_CNV_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_amp1")]
+  local_temp <- local_temp[local_temp$Tumour == tumour,]
+  n_amp_high_rank <- rbind(n_amp_high_rank, c(tumour, sum(local_temp$Rank_amp1 <= 5)))
+}
+n_amp_high_rank <- as.data.frame(n_amp_high_rank)
+colnames(n_amp_high_rank) <- c("Tumour", "Number_high_rank")
+n_amp_high_rank$Number_high_rank <- as.numeric(as.character(n_amp_high_rank$Number_high_rank))
+hist(n_amp_high_rank$Number_high_rank)
+sum(n_amp_high_rank$Number_high_rank >= 3)
+
+n_del_high_rank <- vector()
+for(tumour in tumours){
+  local_temp <- n_CNV_df2[n_CNV_df2$Phylostrata %in% 4:9, c("Tumour", "Phylostrata", "Rank_del1")]
+  local_temp <- local_temp[local_temp$Tumour == tumour,]
+  n_del_high_rank <- rbind(n_del_high_rank, c(tumour, sum(local_temp$Rank_del1 <= 5)))
+}
+n_del_high_rank <- as.data.frame(n_del_high_rank)
+colnames(n_del_high_rank) <- c("Tumour", "Number_high_rank")
+n_del_high_rank$Number_high_rank <- as.numeric(as.character(n_del_high_rank$Number_high_rank))
+hist(n_del_high_rank$Number_high_rank)
+sum(n_del_high_rank$Number_high_rank >= 3)
+
+
 
 enrichment_of_recurrent_CNVs <- n_CNV_df2 
 #save(enrichment_of_recurrent_CNVs, file="enrichment_of_recurrent_CNVs.Rdata")
@@ -231,6 +380,9 @@ colnames(p_values_fraction) <- c("Tumour", "p_amp", "p_del")
 
 p_values_fraction[,2:3] <- apply(p_values_fraction[,2:3], 2, p.adjust, method="BH")
 
+sum(p_values_fraction$p_amp < 0.05)
+sum(p_values_fraction$p_del < 0.05)
+
 pdf("Figure1_freq_amp.pdf",
     height=2.5, width=6)
 g <- ggplot(n_CNV_df2, aes(x=Phylostrata, y = Rank_amp1))+
@@ -238,6 +390,25 @@ g <- ggplot(n_CNV_df2, aes(x=Phylostrata, y = Rank_amp1))+
   geom_path(aes(group=Phylostrata), colour="grey")+
   geom_hline(yintercept=8, colour="darkgrey")+
   geom_point(aes(colour=Tumour))+
+  scale_y_reverse(breaks = 1:16)+
+  ylab("Ranked fraction of\namplified genes")+
+  xlab("")+
+  geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Rank_amp1), method="loess", se=FALSE, colour="black", size=0.5)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+print(g)
+dev.off()
+
+n_CNV_df2$Phy_cat <- ifelse(n_CNV_df2$Phylostrata %in% 1:3, "UC",
+                            ifelse(n_CNV_df2$Phylostrata %in% 4:9, "EM", "MM"))
+n_CNV_df2$Phy_cat <- factor(n_CNV_df2$Phy_cat, levels=c("UC", "EM", "MM"))
+
+pdf("Figure1_freq_amp_boxplot.pdf",
+    height=2.5, width=6)
+g <- ggplot(n_CNV_df2, aes(x=Phylostrata, y = Rank_amp1))+
+  geom_hline(yintercept=8, colour="darkgrey")+
+  geom_boxplot(aes(color=Phy_cat))+
   scale_y_reverse(breaks = 1:16)+
   ylab("Ranked fraction of\namplified genes")+
   xlab("")+
@@ -265,6 +436,20 @@ g <- ggplot(n_CNV_df2, aes(x=Phylostrata, y = Rank_del1))+
 print(g)
 dev.off()
 
+pdf("Figure1_freq_del_boxplot.pdf",
+    height=2.5, width=6)
+g <- ggplot(n_CNV_df2, aes(x=Phylostrata, y = Rank_del1))+
+  geom_hline(yintercept=8, colour="darkgrey")+
+  geom_boxplot(aes(color=Phy_cat))+
+  scale_y_reverse(breaks = 1:16)+
+  ylab("Ranked fraction of\ndeleted genes")+
+  xlab("")+
+  geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Rank_del1), method="loess", se=FALSE, colour="black", size=0.5)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+print(g)
+dev.off()
 
 
 ##Non-recurrent alterations
@@ -291,15 +476,15 @@ fraction_rec_non_CNV$Frac_amp <- fraction_rec_non_CNV$N_genes_amp/fraction_rec_n
 fraction_rec_non_CNV$Frac_del <- fraction_rec_non_CNV$N_genes_del/fraction_rec_non_CNV$Total_del_genes
 
 pdf("Supp1_Non_recurrent_amp.pdf",
-    height=2.5, width=16)
+    height=8, width=18)
 g <- ggplot(subset(fraction_rec_non_CNV, Frequency=="<0.10"), aes(x=Phylostrata, y=Frac_amp))+
   #geom_bar(aes(fill=Frequency), position='dodge', stat='identity')+
   geom_point()+
   geom_line(aes(group=Tumour))+
-  facet_grid(.~Tumour)+
-  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0.45, ymax=Inf), fill="#F8766D", alpha=0.02)+
-  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0.45, ymax=Inf), fill="#00BA38", alpha=0.02)+
-  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0.45, ymax=Inf), fill="#619CFF", alpha=0.02)+
+  facet_wrap(~Tumour, nrow=4)+
+  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0, ymax=Inf), fill="#F8766D", alpha=0.02)+
+  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0, ymax=Inf), fill="#00BA38", alpha=0.02)+
+  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0, ymax=Inf), fill="#619CFF", alpha=0.02)+
   geom_point(size=2)+
   geom_line(aes(group=Tumour))+
   geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Frac_amp), 
@@ -313,15 +498,15 @@ dev.off()
 
 
 pdf("Supp1_Non_recurrent_del.pdf",
-    height=2.5, width=16)
+    height=8, width=18)
 g <- ggplot(subset(fraction_rec_non_CNV, Frequency=="<0.10"), aes(x=Phylostrata, y=Frac_del))+
   #geom_bar(aes(fill=Frequency), position='dodge', stat='identity')+
   geom_point()+
   geom_line(aes(group=Tumour))+
-  facet_grid(.~Tumour)+
-  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0.7, ymax=Inf), fill="#F8766D", alpha=0.02)+
-  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0.7, ymax=Inf), fill="#00BA38", alpha=0.02)+
-  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0.7, ymax=Inf), fill="#619CFF", alpha=0.02)+
+  facet_wrap(~Tumour, nrow=4)+
+  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0, ymax=Inf), fill="#F8766D", alpha=0.02)+
+  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0, ymax=Inf), fill="#00BA38", alpha=0.02)+
+  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0, ymax=Inf), fill="#619CFF", alpha=0.02)+
   geom_line(aes(group=Tumour))+
   geom_point(size=2)+
   geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Frac_del), 
@@ -331,24 +516,6 @@ g <- ggplot(subset(fraction_rec_non_CNV, Frequency=="<0.10"), aes(x=Phylostrata,
         panel.grid.minor = element_blank())
 print(g)
 dev.off()
-
-
-
-p_values_fraction <- vector()
-for(tumour in tumours){
-  local_n_CNV_df2 <- subset(fraction_rec_non_CNV, Frequency=="<0.10")[subset(fraction_rec_non_CNV, Frequency=="<0.10")$Tumour == tumour,]
-  
-  groups <- local_n_CNV_df2$Phylostrata
-  groups <- factor(groups,levels=1:16, ordered=TRUE) 
-  p_amp <- jonckheere.test(g=groups, x=local_n_CNV_df2$Frac_amp, alternative="increasing")$p.value
-  p_del <- jonckheere.test(g=groups, x=local_n_CNV_df2$Frac_del, alternative="increasing")$p.value
-  p_values_fraction <- rbind(p_values_fraction, c(tumour, p_amp, p_del))
-}
-
-p_values_fraction <- data.frame(p_values_fraction)
-colnames(p_values_fraction) <- c("Tumour", "p_amp", "p_del")
-
-p_values_fraction[,2:3] <- apply(p_values_fraction[,2:3], 2, p.adjust, method="BH")
 
 
 total_miss_genes <- aggregate(N_genes_miss ~ Tumour+Phylostrata, n_mut_df, sum)
@@ -371,15 +538,15 @@ fraction_rec_non_mut$Frac_lof <- fraction_rec_non_mut$N_genes_lof/fraction_rec_n
 
 
 pdf("Supp1_Non_recurrent_miss.pdf",
-    height=2.5, width=16)
+    height=8, width=18)
 g <- ggplot(subset(fraction_rec_non_mut, Frequency=="Purified"), aes(x=Phylostrata, y=Frac_miss))+
   #geom_bar(aes(fill=Frequency), position='dodge', stat='identity')+
   geom_point()+
   geom_line(aes(group=Tumour))+
-  facet_grid(.~Tumour)+
-  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0.45, ymax=Inf), fill="#F8766D", alpha=0.02)+
-  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0.45, ymax=Inf), fill="#00BA38", alpha=0.02)+
-  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0.45, ymax=Inf), fill="#619CFF", alpha=0.02)+
+  facet_wrap(~Tumour, nrow=4)+
+  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0, ymax=Inf), fill="#F8766D", alpha=0.02)+
+  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0, ymax=Inf), fill="#00BA38", alpha=0.02)+
+  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0, ymax=Inf), fill="#619CFF", alpha=0.02)+
   geom_point(size=2)+
   geom_line(aes(group=Tumour))+
   geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Frac_miss), 
@@ -391,15 +558,15 @@ print(g)
 dev.off()
 
 pdf("Supp1_Non_recurrent_lof.pdf",
-    height=2.5, width=16)
+    height=8, width=18)
 g <- ggplot(subset(fraction_rec_non_mut, Frequency=="Purified"), aes(x=Phylostrata, y=Frac_lof))+
   #geom_bar(aes(fill=Frequency), position='dodge', stat='identity')+
   geom_point()+
   geom_line(aes(group=Tumour))+
-  facet_grid(.~Tumour)+
-  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0.7, ymax=Inf), fill="#F8766D", alpha=0.02)+
-  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0.7, ymax=Inf), fill="#00BA38", alpha=0.02)+
-  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0.7, ymax=Inf), fill="#619CFF", alpha=0.02)+
+  facet_wrap(~Tumour, nrow=4)+
+  geom_rect(aes(xmin=0.5, xmax=3.5, ymin=0, ymax=Inf), fill="#F8766D", alpha=0.02)+
+  geom_rect(aes(xmin=3.5, xmax=9.5, ymin=0, ymax=Inf), fill="#00BA38", alpha=0.02)+
+  geom_rect(aes(xmin=9.5, xmax=16.5, ymin=0, ymax=Inf), fill="#619CFF", alpha=0.02)+
   geom_line(aes(group=Tumour))+
   geom_point(size=2)+
   geom_smooth(aes(x=as.numeric(as.character(Phylostrata)), y =Frac_lof), 
@@ -410,20 +577,3 @@ g <- ggplot(subset(fraction_rec_non_mut, Frequency=="Purified"), aes(x=Phylostra
 print(g)
 dev.off()
 ##
-
-p_values_fraction <- vector()
-for(tumour in tumours){
-  local_n_mut_df2 <- subset(fraction_rec_non_mut, Frequency=="Purified")[subset(fraction_rec_non_mut, Frequency=="Purified")$Tumour == tumour,]
-  
-  groups <- local_n_mut_df2$Phylostrata
-  groups <- factor(groups,levels=1:16, ordered=TRUE) 
-  p_miss <- jonckheere.test(g=groups, x=local_n_mut_df2$Frac_miss, alternative="increasing")$p.value
-  p_lof <- jonckheere.test(g=groups, x=local_n_mut_df2$Frac_lof, alternative="increasing")$p.value
-  p_values_fraction <- rbind(p_values_fraction, c(tumour, p_miss, p_lof))
-}
-
-p_values_fraction <- data.frame(p_values_fraction)
-colnames(p_values_fraction) <- c("Tumour", "p_miss", "p_lof")
-
-p_values_fraction[,2:3] <- apply(p_values_fraction[,2:3], 2, p.adjust, method="BH")
-
