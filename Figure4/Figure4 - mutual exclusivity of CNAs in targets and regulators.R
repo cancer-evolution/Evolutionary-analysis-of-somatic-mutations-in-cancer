@@ -32,10 +32,13 @@ names(regulator_targets) <- regulators
 ##Load CNVs per patient
 load("CNVs_curated2.Rdata")
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")
 
 patient_CNVs <- vector()
-for(tumour in tumours){
+for(tumour in tumours[1:3]){
   tumour_amp <- CNVs_curated[[tumour]]$amplifications
   tumour_del <- CNVs_curated[[tumour]]$deletions
   
@@ -50,6 +53,7 @@ for(tumour in tumours){
   tumour_del$Segment_Mean <- NULL
   
   patient_CNVs <- rbind(patient_CNVs, tumour_amp, tumour_del)
+  print(tumour)
 }
 
 
@@ -190,7 +194,7 @@ wilcox.test(me_p_fractions_no_CNVs_in_regulators[me_p_fractions_no_CNVs_in_regul
 me_p_fractions$Regulator_status <- factor(me_p_fractions$Regulator_status, levels=c("CNN", "CNA"))
 
 pdf("Figure4_Targets_CNA_by_class_facet.pdf",
-    width=7.5, height=4)
+    width=8, height=4)
 g <- ggplot(me_p_fractions[!is.na(me_p_fractions$Quantiles1),], aes(x=Regulator_status, y=Fraction_targets_with_CNAs))+
   geom_boxplot(aes(fill=Quantiles1, alpha=Regulator_status))+
   scale_alpha_manual(values=c(CNN=1, CNA=0.3))+
@@ -308,4 +312,4 @@ me_p2_UC_EM_i <- me_p2_UC_EM[me_p2_UC_EM$Quantiles1 == "Mixed_downstream",]
 sum(me_p2_UC_EM_i$Diff_fraction < 0)/nrow(me_p2_UC_EM_i)
 sum(me_p2_UC_EM_i$Diff_fraction > 0)/nrow(me_p2_UC_EM_i)
 
-
+View(me_p2_UC_EM[me_p2_UC_EM$Regulator == "MDM2",])
