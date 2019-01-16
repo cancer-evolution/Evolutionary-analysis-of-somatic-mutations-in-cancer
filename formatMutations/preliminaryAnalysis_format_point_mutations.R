@@ -4,18 +4,20 @@
 library(stringr)
 library(readr)
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
-
 #Calculating overlap between somatic mutations obtained by different methods in TCGA
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")
 
 maf_files <- list()
 variants <- list()
 
 pdf("Concordance_between_variant_callers.pdf")
 for(tumour in tumours){
-  filenames <- list.files(pattern="*.maf", full.names=TRUE)  ##MAF files from TCGA
+  path <-  ###path to maf files
+  filenames <- list.files(path, pattern="*.maf$", full.names=TRUE)  ##MAF files from TCGA
   maf_files[[tumour]] <- lapply(filenames, read.delim, comment.char = "#")
   names(maf_files[[tumour]]) <- c("muse", "mutect", "somaticsniper", "varscan")
   patients <- unique(c(as.character(maf_files[[tumour]]$muse$Tumor_Sample_Barcode),
@@ -79,7 +81,7 @@ dev.off()
 
 save(variants, file="variants_in_common.Rdata")
 
-
+source("helper_functions.R")
 
 #Filtering
 variants_no_exac <- list()
@@ -92,20 +94,21 @@ for(tumour in tumours){
   #Use data only from canonical transcripts
   variants_no_common_canonical[[tumour]] <- variants_no_common[[tumour]][which(variants_no_common[[tumour]]$CANONICAL == "YES"),]
   
-  #View(variants_no_common_canonical[[tumour]][which(variants_no_common_canonical[[tumour]]$Exon_Number == ""),])
-  #Use variants that are not in the last exon
-  #Note that those with empty exon numbers are the ones that occur in splice sites
-  exons <- as.character(variants_no_common_canonical[[tumour]]$Exon_Number)
-  split_exons <- as.data.frame(str_split_fixed(exons, "/", n=2))
-  split_exons <- apply(split_exons, 2, as.numeric)
-  to_keep <- which(apply(split_exons, 1, function(x){ x[1] != x[2] }))  #variants not in last exon
-  to_keep <- sort(c(to_keep, which(exons == "")))
-  variants_filtered[[tumour]] <- variants_no_common_canonical[[tumour]][to_keep,]
+  variants_filtered[[tumour]] <- variants_no_common_canonical[[tumour]]
 }
 
-#save(variants_filtered, file="variants_filtered.Rdata")
+save(variants_filtered, file="variants_filtered.Rdata")
 
-load("variants_filtered.Rdata")
+#load("variants_filtered.Rdata")
+
+
+##Identify all possible types of variants
+
+variant_types <- vector()
+for(tumour in tumours){
+  variant_types <- c(variant_types, unique(as.character(variants_filtered[[tumour]]$One_Consequence)))
+}
+unique(variant_types)
 
 
 
@@ -113,30 +116,21 @@ load("variants_filtered.Rdata")
 loss_variants <- c("frameshift_variant", "stop_gained", 
                    "splice_acceptor_variant", "splice_donor_variant")
 
-
-variants_filtered_function <- list()
-
-for(tumour in tumours){
-  #Only keep variants with loss-of-function properties
-  variants_filtered_function[[tumour]] <- variants_filtered[[tumour]]
-  matches <- unique(grep(paste(loss_variants,collapse="|"), 
-                         variants_filtered_function[[tumour]]$Consequence, value=FALSE))
-  
-  variants_filtered_function[[tumour]] <- variants_filtered_function[[tumour]][matches,]
-}
-
-for(tumour in tumours){
-  total_variants <- nrow(variants_filtered_function[[tumour]])
-  total_patients <- length(unique(variants_filtered_function[[tumour]]$Tumor_Sample_Barcode))
-  variants_per_patient <- total_variants/total_patients
-  print(c(total_variants, total_patients, paste(variants_per_patient)))
-}
-
-
-loss_variants <- c("frameshift_variant", "stop_gained", 
-                   "splice_acceptor_variant", "splice_donor_variant")
-
 missense_variants <- c("missense_variant", "inframe_deletion", "inframe_insertion")
+
+
+
+#View(variants_no_common_canonical[[tumour]][which(variants_no_common_canonical[[tumour]]$Exon_Number == ""),])
+#Use variants that are not in the last exon
+#Note that those with empty exon numbers are the ones that occur in splice sites
+# exons <- as.character(variants_no_common_canonical[[tumour]]$Exon_Number)
+# split_exons <- as.data.frame(str_split_fixed(exons, "/", n=2))
+# split_exons <- apply(split_exons, 2, as.numeric)
+# to_keep <- which(apply(split_exons, 1, function(x){ x[1] != x[2] }))  #variants not in last exon
+# to_keep <- sort(c(to_keep, which(exons == "")))
+
+
+
 
 variants_LoF <- list()
 variants_missense <- list()
@@ -144,7 +138,7 @@ for(tumour in tumours){
   #Only keep variants with loss-of-function properties
   variants_LoF[[tumour]] <- variants_filtered[[tumour]]
   matches_LoF <- unique(grep(paste(loss_variants,collapse="|"), 
-                         variants_LoF[[tumour]]$Consequence, value=FALSE))
+                         variants_LoF[[tumour]]$One_Consequence, value=FALSE))
   
   variants_LoF[[tumour]] <- variants_LoF[[tumour]][matches_LoF,]
   ###LoF variants do not have a SIFT, Polyphen score
@@ -164,8 +158,26 @@ for(tumour in tumours){
   variants_missense[[tumour]] <- variants_missense[[tumour]][missense_to_keep,]
 }
 
+##Include only data from primary tumour samples
+
+for(tumour in tumours){
+  print(tumour)
+  samples_miss <- variants_missense[[tumour]]$Tumor_Sample_Barcode
+  temp_miss <- substr(samples_miss, 14, 16)
+  variants_missense[[tumour]] <- variants_missense[[tumour]][which(temp_miss %in% c("01A", "01B", "01C", "01D")),]
+  
+  samples_lof <- variants_LoF[[tumour]]$Tumor_Sample_Barcode
+  temp_lof <- substr(samples_lof, 14, 16)
+  variants_LoF[[tumour]] <- variants_LoF[[tumour]][which(temp_lof %in% c("01A", "01B", "01C", "01D")),]
+  
+}
+
+
 save(variants_LoF, file="variants_LoF.Rdata")
 save(variants_missense, file="variants_missense.Rdata")
+
+
+
 
 
 ###Use only mutations in genes enriched in LoF or synonymous mutations based on the LoF/Syn ratio
@@ -173,20 +185,22 @@ genes_to_exclude <- read_csv("Genes to exclude.txt",
                              col_names = FALSE)
 genes_to_exclude <- unname(unlist(genes_to_exclude[,1]))
 
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+GC_length <- read.table("GC_length_manual.txt", 
+                        header=TRUE)
+
 gene_mut_properties <- list()
 for(tumour in tumours){
   
   #Analyse missense and LoF separately
   
-  local_LoF_variants <- variants_LoF[[tumour]][,c("Hugo_Symbol", "Entrez_Gene_Id", "Tumor_Sample_Barcode", "Consequence", "Start_Position", "End_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2")]
+  local_LoF_variants <- variants_LoF[[tumour]][,c("Hugo_Symbol", "Entrez_Gene_Id", "Tumor_Sample_Barcode", "One_Consequence", "Start_Position", "End_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2")]
   
   local_LoF_variants_ag <- aggregate( Tumor_Sample_Barcode ~ Hugo_Symbol,local_LoF_variants, length)
   print(sum(local_LoF_variants_ag$Hugo_Symbol %in% genes_to_exclude))
   local_LoF_variants_ag <- local_LoF_variants_ag[!(local_LoF_variants_ag$Hugo_Symbol %in% genes_to_exclude),]
   colnames(local_LoF_variants_ag) <- c("Hugo_Symbol", "Number_mutations")
   
-  local_miss_variants <- variants_missense[[tumour]][,c("Hugo_Symbol", "Entrez_Gene_Id", "Tumor_Sample_Barcode", "Consequence", "Start_Position", "End_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2")]
+  local_miss_variants <- variants_missense[[tumour]][,c("Hugo_Symbol", "Entrez_Gene_Id", "Tumor_Sample_Barcode", "One_Consequence", "Start_Position", "End_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2")]
   local_miss_variants_ag <- aggregate( Tumor_Sample_Barcode ~ Hugo_Symbol,local_miss_variants, length)
   print(sum(local_miss_variants_ag$Hugo_Symbol %in% genes_to_exclude))
   local_miss_variants_ag <- local_miss_variants_ag[!(local_miss_variants_ag$Hugo_Symbol %in% genes_to_exclude),]
@@ -216,5 +230,3 @@ for(tumour in tumours){
 }
 
 save(gene_mut_properties, file="gene_mut_properties.Rdata")
-
-
