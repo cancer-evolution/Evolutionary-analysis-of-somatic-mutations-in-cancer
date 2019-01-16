@@ -18,7 +18,11 @@ genes_phy$Age <- ifelse(genes_phy$Phylostrata %in% 1:3, "UC",
 UC_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 1:3),1])
 EM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 4:9),1])
 MM_genes <- as.character(genes_phy[which(genes_phy$Phylostrata %in% 10:16),1])
-tumours <- c("LUAD", "LUSC", "BRCA", "PRAD", "LIHC", "COAD", "STAD")
+
+tumours <- c("ACC", "BLCA", "BRCA", "CESC", "CHOL", "COAD", "ESCA", "GBM", 
+             "HNSC", "KICH", "KIRC", "KIRP", "LGG",  "LIHC", "LUAD", "LUSC", 
+             "OV", "PAAD", "PCPG", "PRAD", "READ", "SARC", "SKCM", "STAD", 
+             "TGCT", "THCA", "THYM", "UCEC", "UCS", "UVM")  
 
 network_list <- list()
 databases <- c("PathwayCommons", "Biogrid","WebIM", "GRN")
@@ -99,6 +103,7 @@ for(database in databases){
   
   network_list[[database]] <- network
 }
+
 
 degree_df <- vector()
 for(database in databases){
@@ -283,15 +288,19 @@ miss_df <- vector()
 lof_df <- vector()
 
 for(tumour in tumours){
+  print(tumour)
   local_mut <- mutations_df[mutations_df$Tumour == tumour,]
   
   missense <- as.character(local_mut[local_mut$Variant_type == "Missense", "Hugo_Symbol"])
   lof <- as.character(local_mut[local_mut$Variant_type == "LoF", "Hugo_Symbol"])
-  miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
-  lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
-  
-  all_miss <- c(all_miss, missense)
-  all_lof <- c(all_lof, lof)
+  if(length(missense) != 0){
+    miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
+    all_miss <- c(all_miss, missense)
+  }
+  if(length(lof) != 0){
+    lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
+    all_lof <- c(all_lof, lof)
+  }
 }
 
 ##Read in CNVs
@@ -343,15 +352,15 @@ only_del <- only_del[!(only_del %in% both_CNVs)]
 
 
 #Common alterations
-all_amp_common <- names(table(all_amp))[table(all_amp)>=3]
-all_del_common <- names(table(all_del))[table(all_del)>=3]
+all_amp_common <- names(table(all_amp))[table(all_amp)>=7] ##Before it was 3
+all_del_common <- names(table(all_del))[table(all_del)>=7]
 all_CNV_common_both <- all_amp_common[all_amp_common %in% all_del_common]
 all_amp_common <- all_amp_common[!(all_amp_common %in% all_CNV_common_both)]
 all_del_common <- all_del_common[!(all_del_common %in% all_CNV_common_both)]
 
 
-all_miss_common <- names(table(all_miss))[table(all_miss)>=3]
-all_lof_common <- names(table(all_lof))[table(all_lof)>=3]
+all_miss_common <- names(table(all_miss))[table(all_miss)>=7]
+all_lof_common <- names(table(all_lof))[table(all_lof)>=7]
 all_mut_common_both <- all_miss_common[all_miss_common %in% all_lof_common]
 all_miss_common <- all_miss_common[!(all_miss_common %in% all_mut_common_both)]
 all_lof_common <- all_lof_common[!(all_lof_common %in% all_mut_common_both)]
@@ -383,17 +392,21 @@ alt_genes$Alt_simplified <- ifelse(alt_genes$Alt %in% c("Miss", "LoF"), "Point",
                                    ifelse(alt_genes$Alt %in% c("Amp", "Del"), "CNV", NA))
 
 fraction_gene_class_binary <- vector()
+number_genes <- vector()
 for(tumour in tumours){
   local_alt <- alt_genes[alt_genes$Tumour == tumour,]
   for(alt in unique(alt_genes$Alt_simplified)){
     local_alt2 <- local_alt[local_alt$Alt_simplified == alt,]
-    per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
-    per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
-    
-    fraction_gene_class_binary <- rbind(fraction_gene_class_binary,
-                                        c(Tumour=tumour, Alteration=alt, 
-                                          Per_regulators=per_regulators, 
-                                          Per_non_r_targets=per_non_r_targets))
+    if(nrow(local_alt2) >= 3){
+      number_genes <- c(number_genes, nrow(local_alt2))
+      per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
+      per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
+      
+      fraction_gene_class_binary <- rbind(fraction_gene_class_binary,
+                                          c(Tumour=tumour, Alteration=alt, 
+                                            Per_regulators=per_regulators, 
+                                            Per_non_r_targets=per_non_r_targets))
+    }
   }
 }
 
@@ -431,10 +444,10 @@ fraction_gene_class_binary_mean$Alteration <- factor(fraction_gene_class_binary_
                                                     levels=c("Point", "CNV"))
 
 pdf("Figure2_Fraction_mutated_regulators.pdf",
-    width=3, height=3)
+    width=3.5, height=3)
 g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Regulator"), aes(x=Alteration, y =Fraction))+
   geom_point(aes(colour=Tumour))+
-  coord_cartesian(ylim=c(0.05,0.4))+
+  coord_cartesian(ylim=c(0, 0.37))+
   geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Regulator"), aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
   geom_path(aes(group=Alteration))+
   geom_point(aes(colour=Tumour), size=2)+
@@ -445,14 +458,28 @@ g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Regulator"), aes
 print(g)
 dev.off()
 
+##In how many tumour types is the fraction of point mutation greater than the fraction with CNV
+greater_reg_point_fraction <- vector()
+for(tumour in tumours){
+  local_temp <- subset(fraction_gene_class_binary_melt, Gene_role=="Regulator" & Tumour == tumour)
+  print(tumour)
+  print(nrow(local_temp))
+  greater_reg_point_fraction <- c(greater_reg_point_fraction,
+                                  local_temp[local_temp$Alteration == "Point","Fraction"] > local_temp[local_temp$Alteration == "CNV","Fraction"])
+  
+}
+sum(greater_reg_point_fraction)/length(greater_reg_point_fraction)###80.77% of tumours
+
+
 pdf("Figure2_Fraction_mutated_targets.pdf",
-    width=3, height=3)
+    width=3.5, height=3)
 g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=Alteration, y =Fraction))+
   geom_point(aes(colour=Tumour))+
-  coord_cartesian(ylim=c(0.6,0.95))+
+  coord_cartesian(ylim=c(0.6,1))+
   geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Target"), 
            aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
   geom_path(aes(group=Alteration))+
+  #geom_path(aes(group=Tumour))+
   geom_point(aes(colour=Tumour), size=2)+
   #ylim(0.5, 1)+
   scale_y_continuous(position = "right")+
@@ -463,6 +490,15 @@ g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=
 print(g)
 dev.off()
 
+greater_tar_point_fraction <- vector()
+for(tumour in tumours){
+  local_temp <- subset(fraction_gene_class_binary_melt, Gene_role=="Target" & Tumour == tumour)
+  greater_tar_point_fraction <- c(greater_tar_point_fraction,
+                                  local_temp[local_temp$Alteration == "Point","Fraction"] < local_temp[local_temp$Alteration == "CNV","Fraction"])
+  
+}
+sum(greater_tar_point_fraction)/length(greater_tar_point_fraction)###80.77% of tumours
+
 
 
 aggregate(Fraction ~ Alteration+Gene_role, fraction_gene_class_binary_melt, mean)
@@ -472,10 +508,10 @@ fraction_gene_class_binary_melt_tar <- fraction_gene_class_binary_melt[fraction_
 
 
 wilcox.test(fraction_gene_class_binary_melt_reg$Fraction[fraction_gene_class_binary_melt_reg$Alteration == "Point"],
-            fraction_gene_class_binary_melt_reg$Per_regulators[fraction_gene_class_binary_melt_reg$Alteration == "CNV"], alternative="greater")
+            fraction_gene_class_binary_melt_reg$Fraction[fraction_gene_class_binary_melt_reg$Alteration == "CNV"], alternative="greater")
 
 wilcox.test(fraction_gene_class_binary_melt_tar$Fraction[fraction_gene_class_binary_melt_tar$Alteration == "CNV"],
-            fraction_gene_class_binary_melt_tar$Per_regulators[fraction_gene_class_binary_melt_tar$Alteration == "Point"], alternative="greater")
+            fraction_gene_class_binary_melt_tar$Fraction[fraction_gene_class_binary_melt_tar$Alteration == "Point"], alternative="greater")
 
 
 
@@ -487,13 +523,16 @@ for(tumour in tumours){
   local_alt <- alt_genes[alt_genes$Tumour == tumour,]
   for(alt in unique(alt_genes$Alt)){
     local_alt2 <- local_alt[local_alt$Alt == alt,]
-    per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
-    per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
-    
-    fraction_gene_class_all <- rbind(fraction_gene_class_all,
-                                     c(Tumour=tumour, Alteration=alt, 
-                                       Per_regulators=per_regulators, 
-                                       Per_non_r_targets=per_non_r_targets))
+    if(nrow(local_alt2) >=3){
+      per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
+      per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
+      
+      fraction_gene_class_all <- rbind(fraction_gene_class_all,
+                                       c(Tumour=tumour, Alteration=alt, 
+                                         Per_regulators=per_regulators, 
+                                         Per_non_r_targets=per_non_r_targets))
+      
+    }
   }
 }
 
@@ -571,6 +610,7 @@ colnames(in_degree_df)[2] <- "Degree"
 median_ratio <- vector()
 p_EM <- vector()
 median_overall <- vector()
+#options(warn=2)
 for(tumour in tumours){
   local_miss <- miss_df[miss_df[,1] == tumour,]
   local_lof <- lof_df[lof_df[,1] == tumour,]
@@ -588,15 +628,13 @@ for(tumour in tumours){
   local_degree_df <- local_out_degree_df
   
   #Only considering genes with dual roles
-  local_degree_df <- data.frame(local_degree_df, In_degree=local_in_degree_df[match(local_degree_df$Genes, local_degree_df$Genes), "Degree"])
+  local_degree_df <- data.frame(local_degree_df, In_degree=local_in_degree_df[match(local_degree_df$Genes, local_in_degree_df$Genes), "Degree"])
   
   local_degree_df$Ratio_out_in <- local_degree_df$Out_degree/local_degree_df$In_degree
   
-  #local_median_overall <- median(local_degree_df$Ratio_out_in)
-  #median_overall <- c(median_overall, local_median_overall)
-  #local_degree_df$Ratio_out_in <- local_degree_df$Ratio_out_in/local_median_overall
-  
-  local_median_ratio <- aggregate(Ratio_out_in ~ Age+Alt_simplified, local_degree_df, median)
+  local_median_ratio <- aggregate(Ratio_out_in ~ Age+Alt_simplified, local_degree_df, median)  ##It was median
+  #local_median_ratio <- local_degree_df
+    
   local_median_ratio$Tumour <- tumour
   
   median_ratio <- rbind(median_ratio, local_median_ratio)
@@ -606,8 +644,6 @@ for(tumour in tumours){
 upper_quantile <- aggregate(Ratio_out_in ~ Age+Alt_simplified, median_ratio, quantile, 0.75)
 lower_quantile <- aggregate(Ratio_out_in ~ Age+Alt_simplified, median_ratio, quantile, 0.25)
 median_values <- aggregate(Ratio_out_in ~ Age+Alt_simplified, median_ratio, median)
-
-
 
 colnames(median_values)[3] <- "Median_values"
 median_values$Upper <- upper_quantile$Ratio_out_in
@@ -619,13 +655,12 @@ median_values$Age <- factor(median_values$Age, levels=c("MM", "EM", "UC"))
 
 pdf("Figure2_Ratio_out_in_degree.pdf",
     width=7, height=3)
-g <- ggplot(median_values, aes(x=Alt_simplified, y =Median_values))+
+g <- ggplot(median_values, aes(x=Alt_simplified, y = Median_values))+
   geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
              position = position_dodge(width = 0.75))+
   geom_linerange(aes(ymin=Lower, ymax=Upper, colour=Age),
                  position = position_dodge(width = 0.75), size=0.75)+
-  #ylim(0.25,1.75)+
-  coord_flip(ylim=c(0.35,1.75))+
+  coord_flip(ylim=c(0,3.5))+
   #geom_hline(yintercept = 1, size=0.5, colour="grey")+
   geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
              position = position_dodge(width = 0.75))+
@@ -643,6 +678,59 @@ g <- ggplot(median_values, aes(x=Alt_simplified, y =Median_values))+
 print(g)
 dev.off()
 
+
+pdf("Figure2_Ratio_out_in_degree_log.pdf",
+    width=7, height=3)
+g <- ggplot(median_values, aes(x=Alt_simplified, y = log2(Median_values)))+
+  geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
+             position = position_dodge(width = 0.75))+
+  geom_linerange(aes(ymin=log2(Lower), ymax=log2(Upper), colour=Age),
+                 position = position_dodge(width = 0.75), size=0.75)+
+  coord_flip()+
+  #geom_hline(yintercept = 1, size=0.5, colour="grey")+
+  geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
+             position = position_dodge(width = 0.75))+
+  geom_linerange(aes(ymin=log2(Lower), ymax=log2(Upper), colour=Age),
+                 position = position_dodge(width = 0.75), size=0.75)+
+  scale_colour_manual(values=c(UC=gg_color_hue(3)[1], EM=gg_color_hue(3)[2], MM=gg_color_hue(3)[3]))+
+  ylab("Ratio out-degree/in-degree")+
+  xlab("")+
+  facet_wrap("Alt_simplified", scales='free_y', strip.position="left", nrow=2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(colour=NA, fill=NA),
+        panel.background = element_rect(fill = NA))
+print(g)
+dev.off()
+
+
+ggplot(median_values, aes(x=Alt_simplified, y = Median_values))+
+  geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
+             position = position_dodge(width = 0.75))+
+  geom_linerange(aes(ymin=Lower, ymax=Upper, colour=Age),
+                 position = position_dodge(width = 0.75), size=0.75)+
+  #ylim(0.25,1.75)+
+  coord_flip(ylim=c(0.3,8.5))+
+  #geom_hline(yintercept = 1, size=0.5, colour="grey")+
+  geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
+             position = position_dodge(width = 0.75))+
+  geom_linerange(aes(ymin=Lower, ymax=Upper, colour=Age),
+                 position = position_dodge(width = 0.75), size=0.75)+
+  scale_colour_manual(values=c(UC=gg_color_hue(3)[1], EM=gg_color_hue(3)[2], MM=gg_color_hue(3)[3]))+
+  ylab("Ratio out-degree/in-degree")+
+  xlab("")+
+  facet_wrap("Alt_simplified", scales='free_y', strip.position="left", nrow=2)+
+  theme_bw()+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(colour=NA, fill=NA),
+        panel.background = element_rect(fill = NA))
+
+
+
+
+
 median_ratio[intersect(which(median_ratio$Age == "EM"),
                        which(median_ratio$Alt_simplified == "Point")),]
 
@@ -654,4 +742,3 @@ median_values_print <- median_values[,c("Age","Alt_simplified","Median_values","
 colnames(median_values_print) <- c("Age", "Mutation", "Median", "Upperquantile", "Lowerquantile")
 write.table(median_values_print, file="Supp_table_Ratio_out_in.txt",
             sep="\t", quote=FALSE, row.names=FALSE)
-
