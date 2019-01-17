@@ -1,3 +1,94 @@
+get_gene_lengths <- function(){
+  #To get entrez IDs
+  load("gene_lengths_human.Rdata")
+  genes_with_length <- names(exonic.gene.sizes)
+  
+  #mart <- useMart(biomart = 'ensembl', dataset = 'hsapiens_gene_ensembl' )
+  #ensg_hsap <- getBM(mart = mart, attributes=c('ensembl_gene_id', 'external_gene_name'), filter='ensembl_gene_id', values = genes_with_length)
+  #save( ensg_hsap, file='ensg_hsap.Rdata')
+  
+  load(file='ensg_hsap.Rdata')
+  
+  names(exonic.gene.sizes) <- ensg_hsap[match(names(exonic.gene.sizes),ensg_hsap[,1]), 2]
+  
+  genes_length <- data.frame("Gene" = names(exonic.gene.sizes),
+                             "Length" = unname(exonic.gene.sizes))
+  return(genes_length)
+}
+
+
+exclude_ExAC <- function(local_vep_results){
+  #Exclude variants with a frequency in ExAC different to 0
+  ExAC_values <- unique(c(local_vep_results$ExAC_AF_EAS, local_vep_results$ExAC_AF_AMR,
+                          local_vep_results$ExAC_AF_NFE, local_vep_results$ExAC_AF_AFR,
+                          local_vep_results$ExAC_AF, local_vep_results$ExAC_AF_FIN,
+                          local_vep_results$ExAC_AF_OTH, local_vep_results$ExAC_AF_SAS,
+                          local_vep_results$ExAC_AF_Adj))
+  
+  #Overall, frequencies are small. 
+  
+  #Exclude variants that are not equal to 0 and not NA
+  ExAC_names <- c("ExAC_AF_EAS", "ExAC_AF_AMR", "ExAC_AF_NFE", "ExAC_AF_AFR",
+                  "ExAC_AF", "ExAC_AF_FIN", "ExAC_AF_OTH", "ExAC_AF_SAS", "ExAC_AF_Adj")
+  
+  #Keeping variants with any ExAC equal to zero or NA
+  local_vep_no_exac <- local_vep_results
+  for(ExAC in ExAC_names){
+    print(ExAC)
+    print(dim(local_vep_no_exac))
+    local_vep_no_exac <- local_vep_no_exac[c(which(is.na(local_vep_no_exac[,ExAC])),
+                                             which(local_vep_no_exac[,ExAC] == 0),
+                                             which(local_vep_no_exac[,ExAC] == "")),]
+    print(length(c(which(is.na(local_vep_no_exac[,ExAC])),
+                   which(local_vep_no_exac[,ExAC] == 0),
+                   which(local_vep_no_exac[,ExAC] == ""))))
+    #print(dim(local_vep_no_exac))
+  }
+  
+  ## ExAC_EAS_AF	: ExAC East Asian Allele frequency
+  ## ExAC_AMR_AF	: ExAC American Allele frequency
+  ## ExAC_NFE_AF	: ExAC Non-Finnish European Allele frequency
+  ## ExAC_AFR_AF	: ExAC African/African American Allele frequency
+  ## ExAC_AF	: ExAC Allele frequency in genotypes, for each ALT allele, in the same order as listed
+  ## ExAC_FIN_AF	: ExAC Finnish Allele frequency
+  ## ExAC_OTH_AF	: ExAC Other Allele frequency
+  ## ExAC_SAS_AF	: ExAC South Asian Allele frequency
+  return(local_vep_no_exac)
+}
+
+exclude_1000_genomes <- function(local_vep_no_exac){
+  #Exclude variants with a maf in 1000 Genomes different to zero and NA
+  
+  ## GMAF : Minor allele and frequency of existing variant in 1000 Genomes Phase 1 combined population
+  ## AFR_MAF : Frequency of existing variant in 1000 Genomes Phase 1 combined African population
+  ## AMR_MAF : Frequency of existing variant in 1000 Genomes Phase 1 combined American population
+  ## ASN_MAF : Frequency of existing variant in 1000 Genomes Phase 1 combined Asian population
+  ## EUR_MAF : Frequency of existing variant in 1000 Genomes Phase 1 combined European population
+  ## AA_MAF : Frequency of existing variant in NHLBI-ESP African American population
+  ## EA_MAF : Frequency of existing variant in NHLBI-ESP European American population
+  
+  thousand_genomes <- c("GMAF", "EUR_MAF","AFR_MAF","ASN_MAF","AMR_MAF","AA_MAF","EA_MAF","EAS_MAF","SAS_MAF")
+  
+  local_vep_no_common <- local_vep_no_exac
+  for(thousand in thousand_genomes){
+    print(thousand)
+    print(dim(local_vep_no_common))
+    local_vep_no_common <- local_vep_no_common[c(which(is.na(local_vep_no_common[,thousand])),
+                                                 which(local_vep_no_common[,thousand] == 0),
+                                                 which(local_vep_no_common[,thousand] == "")),]
+    print(length(c(which(is.na(local_vep_no_common[,thousand])),
+                   which(local_vep_no_common[,thousand] == 0),
+                   which(local_vep_no_common[,thousand] == ""))))
+    print(dim(local_vep_no_common))
+  }
+  
+  #33456 variants remain. 
+  #ExAc filtering removed 3757 variants, 
+  #thousand genomes and NHLBI-ESP removed another 102 variants
+  return(local_vep_no_common)
+}
+
+
 load_mutations <- function(){
   load("gene_mut_properties.Rdata")
   mut_to_exclude <- read_csv("Genes to exclude.txt", 
@@ -995,11 +1086,15 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
     
     missense <- as.character(local_mut[local_mut$Variant_type == "Missense", "Hugo_Symbol"])
     lof <- as.character(local_mut[local_mut$Variant_type == "LoF", "Hugo_Symbol"])
-    miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
-    lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
     
-    all_miss <- c(all_miss, missense)
-    all_lof <- c(all_lof, lof)
+    if(length(missense) != 0){
+      miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
+      all_miss <- c(all_miss, missense)
+    }
+    if(length(lof) != 0){
+      lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
+      all_lof <- c(all_lof, lof)
+    }
   }
   
   ##Read in CNVs
@@ -1039,7 +1134,6 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
   only_miss <- only_miss[!(only_miss %in% both_mutations)]
   only_lof <- only_lof[!(only_lof %in% both_mutations)]
   
-  
   only_amp <- unique(all_amp)
   only_del <- unique(all_del)
   both_CNVs <- only_amp[only_amp %in% only_del]
@@ -1048,15 +1142,15 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
   
   
   #Common alterations
-  all_amp_common <- names(table(all_amp))[table(all_amp)>=3]
-  all_del_common <- names(table(all_del))[table(all_del)>=3]
+  all_amp_common <- names(table(all_amp))[table(all_amp)>=7]
+  all_del_common <- names(table(all_del))[table(all_del)>=7]
   all_CNV_common_both <- all_amp_common[all_amp_common %in% all_del_common]
   all_amp_common <- all_amp_common[!(all_amp_common %in% all_CNV_common_both)]
   all_del_common <- all_del_common[!(all_del_common %in% all_CNV_common_both)]
   
   
-  all_miss_common <- names(table(all_miss))[table(all_miss)>=3]
-  all_lof_common <- names(table(all_lof))[table(all_lof)>=3]
+  all_miss_common <- names(table(all_miss))[table(all_miss)>=7]
+  all_lof_common <- names(table(all_lof))[table(all_lof)>=7]
   all_mut_common_both <- all_miss_common[all_miss_common %in% all_lof_common]
   all_miss_common <- all_miss_common[!(all_miss_common %in% all_mut_common_both)]
   all_lof_common <- all_lof_common[!(all_lof_common %in% all_mut_common_both)]
@@ -1092,13 +1186,15 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
     local_alt <- alt_genes[alt_genes$Tumour == tumour,]
     for(alt in unique(alt_genes$Alt_simplified)){
       local_alt2 <- local_alt[local_alt$Alt_simplified == alt,]
-      per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
-      per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
+      if(nrow(local_alt2) >= 3){
+        per_regulators <- sum(unique(local_alt2$Genes) %in% regulators)/length(unique(local_alt2$Genes))
+        per_non_r_targets <- sum(unique(local_alt2$Genes) %in% non_regulator_targets)/length(unique(local_alt2$Genes))
       
-      fraction_gene_class_binary <- rbind(fraction_gene_class_binary,
+        fraction_gene_class_binary <- rbind(fraction_gene_class_binary,
                                           c(Tumour=tumour, Alteration=alt, 
                                             Per_regulators=per_regulators, 
                                             Per_non_r_targets=per_non_r_targets))
+      }
     }
   }
   
@@ -1128,7 +1224,7 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
                                                        levels=c("Point", "CNV"))
   
   pdf(paste(database, "_Fig7.pdf", sep=""),
-      width=3, height=3)
+      width=4, height=4)
   g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Regulator"), aes(x=Alteration, y =Fraction))+
     geom_point(aes(colour=Tumour))+
     #coord_cartesian(ylim=c(0.05,0.4))+
@@ -1142,24 +1238,65 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
   print(g)
   dev.off()
   
-  pdf(paste(database, "_Fig8.pdf", sep=""),
-      width=3, height=3)
-  g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=Alteration, y =Fraction))+
-    geom_point(aes(colour=Tumour))+
-    #coord_cartesian(ylim=c(0.6,0.95))+
-    geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Target"), 
-             aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
-    geom_path(aes(group=Alteration))+
-    geom_point(aes(colour=Tumour), size=2)+
-    #ylim(0.5, 1)+
-    scale_y_continuous(position = "right")+
-    ggtitle("Target")+
-    theme_bw()+
-    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-          panel.background = element_blank())
-  print(g)
-  dev.off()
-  
+  if(database == "RegNetwork"){
+    pdf(paste(database, "_Fig8.pdf", sep=""),
+        width=4, height=4)
+    g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=Alteration, y =Fraction))+
+      geom_point(aes(colour=Tumour))+
+      coord_cartesian(ylim=c(0.6,1))+
+      geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Target"), 
+               aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
+      geom_path(aes(group=Alteration))+
+      geom_point(aes(colour=Tumour), size=2)+
+      #ylim(0.5, 1)+
+      scale_y_continuous(position = "right")+
+      ggtitle("Target")+
+      theme_bw()+
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            panel.background = element_blank())
+    print(g)
+    dev.off()
+    
+  }else if (database == "Trrust"){
+    pdf(paste(database, "_Fig8.pdf", sep=""),
+        width=4, height=4)
+    g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=Alteration, y =Fraction))+
+      geom_point(aes(colour=Tumour))+
+      coord_cartesian(ylim=c(0.25,0.95))+
+      geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Target"), 
+               aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
+      geom_path(aes(group=Alteration))+
+      geom_point(aes(colour=Tumour), size=2)+
+      #ylim(0.5, 1)+
+      scale_y_continuous(position = "right")+
+      ggtitle("Target")+
+      theme_bw()+
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            panel.background = element_blank())
+    print(g)
+    dev.off()
+    
+  }else{
+    pdf(paste(database, "_Fig8.pdf", sep=""),
+        width=4, height=4)
+    g <- ggplot(subset(fraction_gene_class_binary_melt, Gene_role=="Target"), aes(x=Alteration, y =Fraction))+
+      geom_point(aes(colour=Tumour))+
+      #coord_cartesian(ylim=c(0.6,0.95))+
+      geom_bar(data=subset(fraction_gene_class_binary_mean, Gene_role=="Target"), 
+               aes(x=Alteration, y=Fraction), stat='identity', fill="grey92", color="black")+
+      geom_path(aes(group=Alteration))+
+      geom_point(aes(colour=Tumour), size=2)+
+      #ylim(0.5, 1)+
+      scale_y_continuous(position = "right")+
+      ggtitle("Target")+
+      theme_bw()+
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            panel.background = element_blank())
+    print(g)
+    dev.off()
+    
+  }
+
   fraction_gene_class_binary_melt_reg <- fraction_gene_class_binary_melt[fraction_gene_class_binary_melt$Gene_role == "Regulator",]
   fraction_gene_class_binary_melt_tar <- fraction_gene_class_binary_melt[fraction_gene_class_binary_melt$Gene_role == "Target",]
   
@@ -1200,7 +1337,7 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
     local_degree_df <- local_out_degree_df
     
     #Only considering genes with dual roles
-    local_degree_df <- data.frame(local_degree_df, In_degree=local_in_degree_df[match(local_degree_df$Genes, local_degree_df$Genes), "Degree"])
+    local_degree_df <- data.frame(local_degree_df, In_degree=local_in_degree_df[match(local_degree_df$Genes, local_in_degree_df$Genes), "Degree"])
     
     local_degree_df$Ratio_out_in <- local_degree_df$Out_degree/local_degree_df$In_degree
     
@@ -1259,7 +1396,7 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
 }
 
 load_TRRUST <- function(){
-  network <- read.delim("trrust_rawdata.human.tsv",sep="\t",
+  network <- read.delim("trrust_rawdata.human.tsv", sep="\t",
                         header=FALSE)
   
   network <- network[,1:2]
@@ -1324,14 +1461,17 @@ reproduce_results_figure_3C <- function(database){
     
     missense <- as.character(local_mut[local_mut$Variant_type == "Missense", "Hugo_Symbol"])
     lof <- as.character(local_mut[local_mut$Variant_type == "LoF", "Hugo_Symbol"])
-    miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
-    lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
+
+    if(length(missense) != 0){
+      miss_df <- rbind(miss_df, cbind(Tumour=tumour, Alt="Miss", Genes=missense))
+      all_miss <- c(all_miss, missense)
+    }
+    if(length(lof) != 0){
+      lof_df <- rbind(lof_df, cbind(Tumour=tumour, Alt="LoF", Genes=lof))
+      all_lof <- c(all_lof, lof)
+    }
     
-    all_miss <- c(all_miss, missense)
-    all_lof <- c(all_lof, lof)
   }
-  
-  
   
   ##Read in CNVs
   ##Using only focal ones
@@ -1377,15 +1517,15 @@ reproduce_results_figure_3C <- function(database){
   only_del <- only_del[!(only_del %in% both_CNVs)]
   
   #Common alterations
-  all_amp_common <- names(table(all_amp))[table(all_amp)>=3]
-  all_del_common <- names(table(all_del))[table(all_del)>=3]
+  all_amp_common <- names(table(all_amp))[table(all_amp)>=7]
+  all_del_common <- names(table(all_del))[table(all_del)>=7]
   all_CNV_common_both <- all_amp_common[all_amp_common %in% all_del_common]
   all_amp_common <- all_amp_common[!(all_amp_common %in% all_CNV_common_both)]
   all_del_common <- all_del_common[!(all_del_common %in% all_CNV_common_both)]
   
   
-  all_miss_common <- names(table(all_miss))[table(all_miss)>=3]
-  all_lof_common <- names(table(all_lof))[table(all_lof)>=3]
+  all_miss_common <- names(table(all_miss))[table(all_miss)>=7]
+  all_lof_common <- names(table(all_lof))[table(all_lof)>=7]
   all_mut_common_both <- all_miss_common[all_miss_common %in% all_lof_common]
   all_miss_common <- all_miss_common[!(all_miss_common %in% all_mut_common_both)]
   all_lof_common <- all_lof_common[!(all_lof_common %in% all_mut_common_both)]
@@ -1536,53 +1676,53 @@ reproduce_results_figure_4A <- function(RN_network, database){
   me_p <- vector()
   for(regulator in regulators){
     regulator_targets_CNVs <- vector()
-    
+
     local_targets <- regulator_targets[[regulator]]
-    
+
     targets_with_CNVs <- patient_CNVs[patient_CNVs$Gene %in% local_targets,]
     targets_with_CNVs$Target_age <- genes_phy[match(targets_with_CNVs$Gene, genes_phy$GeneID), "Age"]
-    
+
     CNV_in_regulator <- patient_CNVs[patient_CNVs$Gene %in% regulator,]
-    
+
     if(nrow(CNV_in_regulator) >= 3){
       all_patients_involved <- unique(c(targets_with_CNVs$Sample, CNV_in_regulator$Sample))
-      
+
       for(patient in all_patients_involved){
-        
+
         patient_targets_with_CNVs <- targets_with_CNVs[targets_with_CNVs$Sample == patient,]
-        
+
         patient_targets_with_CNVs_UC <- patient_targets_with_CNVs[patient_targets_with_CNVs$Target_age == "UC",]
         patient_targets_with_CNVs_EM <- patient_targets_with_CNVs[patient_targets_with_CNVs$Target_age == "EM",]
         patient_targets_with_CNVs_MM <- patient_targets_with_CNVs[patient_targets_with_CNVs$Target_age == "MM",]
-        
+
         patient_targets_with_CNVs_UC <- patient_targets_with_CNVs_UC[!is.na(patient_targets_with_CNVs_UC$Gene),]
         patient_targets_with_CNVs_EM <- patient_targets_with_CNVs_EM[!is.na(patient_targets_with_CNVs_EM$Gene),]
         patient_targets_with_CNVs_MM <- patient_targets_with_CNVs_MM[!is.na(patient_targets_with_CNVs_MM$Gene),]
-        
+
         patient_regulator_with_CNV <- patient %in% CNV_in_regulator$Sample
-        
+
         regulator_targets_CNVs <- rbind(regulator_targets_CNVs,
                                         c(patient, patient_regulator_with_CNV, nrow(patient_targets_with_CNVs)/length(local_targets),
                                           nrow(patient_targets_with_CNVs_UC), nrow(patient_targets_with_CNVs_EM), nrow(patient_targets_with_CNVs_MM)))
       }
-      
+
       fraction_targets_when_regulator_CNV <- as.numeric(regulator_targets_CNVs[regulator_targets_CNVs[,2] == TRUE, 3])
       fraction_targets_when_regulator_not_CNV <- as.numeric(regulator_targets_CNVs[regulator_targets_CNVs[,2] == FALSE, 3])
       n_UC_targets_affected <- as.numeric(regulator_targets_CNVs[, 4])
       n_EM_targets_affected <- as.numeric(regulator_targets_CNVs[, 5])
       n_MM_targets_affected <- as.numeric(regulator_targets_CNVs[, 6])
-      
+
       if((length(fraction_targets_when_regulator_not_CNV) >= 3) && (length(fraction_targets_when_regulator_CNV) >= 3)){
         p1 <- wilcox.test(fraction_targets_when_regulator_not_CNV, fraction_targets_when_regulator_CNV, alternative="greater")$p.val
         p2 <- wilcox.test(fraction_targets_when_regulator_CNV, fraction_targets_when_regulator_not_CNV, alternative="greater")$p.val
         me_p <- rbind(me_p, c(regulator, median(fraction_targets_when_regulator_CNV), median(fraction_targets_when_regulator_not_CNV), p1, p2,
                               median(n_UC_targets_affected), median(n_EM_targets_affected), median(n_MM_targets_affected)))
-      }  
+      }
     }
     print(regulator)
   }
-  
-  save(me_p, file=paste("~me_p_", database, ".Rdata", sep=""))
+   
+  save(me_p, file=paste("me_p_", database, ".Rdata", sep=""))
   load(paste("me_p_", database, ".Rdata", sep=""))
   
   me_p <- as.data.frame(me_p)
@@ -1636,7 +1776,7 @@ reproduce_results_figure_4A <- function(RN_network, database){
   
   
   
-  load(paste(database, ".Rdata", sep=""))
+  load(paste("regulator_classification_", database, ".Rdata", sep=""))
   
   me_p_fractions$Quantiles1 <- regulator_classification[match(me_p_fractions$Regulator, regulator_classification$Regulator), "Regulator_class"]
   
@@ -1845,7 +1985,6 @@ calculate_diff_exp_CNV2 <- function(CNV_genes, local_CNV, genes_class){
     }
     
     if(sum(local_gene_exp_df$Sample %in% CNV_samples) >= 3 & sum(is.finite(local_gene_exp_df$Exp)) != 0){
-      
       if(sum(is.finite(local_gene_exp_df[local_gene_exp_df$Sample_type == genes_class, "Exp"])) != 0){
         if(sum(is.finite(local_gene_exp_df[local_gene_exp_df$Sample_type == "NOT", "Exp"])) != 0){
           p <- wilcox.test(local_gene_exp_df[local_gene_exp_df$Sample_type == genes_class, "Exp"],
@@ -1859,12 +1998,15 @@ calculate_diff_exp_CNV2 <- function(CNV_genes, local_CNV, genes_class){
     }
   }
   CNV_pvalues <- as.data.frame(CNV_pvalues)
-  colnames(CNV_pvalues) <- c("Tumour", "CNV", "Gene", "p_val")
-  CNV_pvalues$p_val <- as.numeric(as.character(CNV_pvalues$p_val))
-  
-  CNV_pvalues$Gene_age <- genes_phy_categorical[match(CNV_pvalues$Gene, genes_phy_categorical$GeneID), 
-                                                "Phylostrata"]
-  CNV_pvalues$Gene_age <- factor(CNV_pvalues$Gene_age, levels=c("UC", "EM", "MM"))
+  if(nrow(CNV_pvalues) != 0){
+    colnames(CNV_pvalues) <- c("Tumour", "CNV", "Gene", "p_val")
+    CNV_pvalues$p_val <- as.numeric(as.character(CNV_pvalues$p_val))
+    
+    CNV_pvalues$Gene_age <- genes_phy_categorical[match(CNV_pvalues$Gene, genes_phy_categorical$GeneID), 
+                                                  "Phylostrata"]
+    CNV_pvalues$Gene_age <- factor(CNV_pvalues$Gene_age, levels=c("UC", "EM", "MM"))
+    
+  }
   return(CNV_pvalues)
 }
 
@@ -1969,3 +2111,132 @@ calculate_fraction_genes_altered_by_age <- function(genes_age){
   return(list(Per_category=fraction_genes_altered, With_respect_to_total=fraction_genes_altered_from_total))
 }
 
+load_mutations_mutsig <- function(){
+  load("~/Documents/Paper 3/Objects_gistic_mutsig/mutsig2CV_sig.Rdata")
+
+  mutations_df <- vector()
+  for(tumour in tumours){
+    local_mut <- mutsig2CV_sig[[tumour]]
+    
+    local_mut <- local_mut[,c(2, 19)]
+    
+    local_mut$Gene_age <- genes_phy[match(local_mut$Hugo_Symbol, genes_phy$GeneID), "Phylostrata"]
+    local_mut$Tumour <- tumour
+    mutations_df <- rbind(mutations_df, local_mut)
+    
+  }
+  return(mutations_df)
+}
+
+load_CNVs_gistic <- function(only_focal){
+  CNVs_df <- vector()
+  for(tumour in tumours){
+    local_amp <- CNVs_curated[[tumour]]$amplifications
+    local_del <- CNVs_curated[[tumour]]$deletions
+    
+    if(only_focal == "FOCAL"){
+      local_amp <- as.character(CNVs_curated_gistic_focal[[tumour]][["amplifications"]])
+      local_amp <- as.character(CNVs_curated_gistic_focal[[tumour]][["deletions"]])
+ 
+    }else if(only_focal=="ANY"){
+      #No subsetting
+    }
+    
+    if(length(local_amp) > 0 ){
+      local_amp <- data.frame(Genes = local_amp,
+                              CNA = "Amplification",
+                              Gene_age = genes_phy[match(local_amp, genes_phy$GeneID), "Phylostrata"],
+                              Tumour = tumour)
+      CNVs_df <- rbind(CNVs_df, local_amp)
+      
+    }
+    if(length(local_del) > 0 ){
+      local_del <- data.frame(Genes = local_del,
+                            CNA = "Deletion",
+                            Gene_age = genes_phy[match(local_del, genes_phy$GeneID), "Phylostrata"],
+                            Tumour = tumour)
+      CNVs_df <- rbind(CNVs_df, local_del)
+    }
+  }
+  return(CNVs_df)
+}
+
+calculate_fraction_of_patients_with_CNV_gistic <- function(CNVs_df){
+  
+  patient_frequency_CNV_df <- vector()
+  for(tumour in tumours){
+   
+    n_pat_cat_amp_df <- aggregate(Gene_age ~ Pat_amp_cat, n_pat_df, table)
+    n_pat_cat_amp_df <- data.frame(Frequency = n_pat_cat_amp_df$Pat_amp_cat, n_pat_cat_amp_df$Gene_age)
+    colnames(n_pat_cat_amp_df)[2:17] <- paste("Phy", 1:16, sep="_")
+    n_pat_cat_amp_df_melt <- melt(n_pat_cat_amp_df)
+    
+    n_pat_cat_del_df <- aggregate(Gene_age ~ Pat_del_cat, n_pat_df, table)
+    n_pat_cat_del_df <- data.frame(Frequency = n_pat_cat_del_df$Pat_del_cat, n_pat_cat_del_df$Gene_age)
+    colnames(n_pat_cat_del_df)[2:17] <- paste("Phy", 1:16, sep="_")
+    n_pat_cat_del_df_melt <- melt(n_pat_cat_del_df)
+    
+    #frequencies <- c("<0.05", "0.05<x<0.15", "0.15<x<0.25", ">0.25")
+    #frequencies <- c("<0.10", "0.10<x<0.20", ">0.20")
+    frequencies <- c("<0.10", ">0.10")
+    
+    patient_frequency_CNV <- data.frame(Tumour =tumour, Frequency = rep(frequencies, 16), Phylostrata = rep(paste("Phy", 1:16, sep="_"), each=length(frequencies)))
+    
+    patient_frequency_CNV$N_genes_amp <- n_pat_cat_amp_df_melt[match(paste(patient_frequency_CNV$Frequency, patient_frequency_CNV$Phylostrata),
+                                                                     paste(n_pat_cat_amp_df_melt$Frequency, n_pat_cat_amp_df_melt$variable)),"value"]
+    patient_frequency_CNV$N_genes_del <- n_pat_cat_del_df_melt[match(paste(patient_frequency_CNV$Frequency, patient_frequency_CNV$Phylostrata),
+                                                                     paste(n_pat_cat_del_df_melt$Frequency, n_pat_cat_del_df_melt$variable)),"value"]
+    patient_frequency_CNV$N_genes_amp[is.na(patient_frequency_CNV$N_genes_amp)] <- 0
+    patient_frequency_CNV$N_genes_del[is.na(patient_frequency_CNV$N_genes_del)] <- 0
+    
+    patient_frequency_CNV$Phylostrata <- substr(patient_frequency_CNV$Phylostrata, 5,6)
+    patient_frequency_CNV$Phylostrata <- factor(patient_frequency_CNV$Phylostrata, levels=1:16)
+    
+    patient_frequency_CNV$Frequency <- factor(patient_frequency_CNV$Frequency, levels=rev(frequencies))
+    patient_frequency_CNV$Total_genes <- n_genes_phy[match(patient_frequency_CNV$Phylostrata, n_genes_phy$Phy), "Number"]
+    
+    patient_frequency_CNV$Fraction_genes_amp <- patient_frequency_CNV$N_genes_amp/patient_frequency_CNV$Total_genes
+    patient_frequency_CNV$Fraction_genes_del <- patient_frequency_CNV$N_genes_del/patient_frequency_CNV$Total_genes
+    
+    patient_frequency_CNV_df <- rbind(patient_frequency_CNV_df, patient_frequency_CNV)
+  } 
+  return(patient_frequency_CNV_df)
+}
+
+
+
+add_mut_CNV_to_degree_df_mutsig <- function(alt_degree_df, only_mut, only_amp, only_del){
+  alt_degree_df$Mut <- NA
+  alt_degree_df$Mut <- ifelse(alt_degree_df$Genes %in% only_mut, "Mut", NA)
+  
+  alt_degree_df$CNV <- NA
+  alt_degree_df$CNV <- ifelse(alt_degree_df$Genes %in% only_amp, "Amp",
+                              ifelse(alt_degree_df$Genes %in% only_del, "Del", NA))
+  
+  alt_degree_df$WT <- NA
+  alt_degree_df$WT <- apply(alt_degree_df, 1, function(x){
+    if(is.na(x[5]) & is.na(x[6])){
+      return("WT")
+    }else{
+      return(NA)
+    }
+  })
+  
+  both_mutations <- only_mut
+  both_CNVs <- only_amp[only_amp %in% only_del]
+  
+  alt_degree_df$WT[alt_degree_df$Genes %in% both_mutations] <- NA
+  alt_degree_df$WT[alt_degree_df$Genes %in% both_CNVs] <- NA
+  
+  alt_degree_df1 <- alt_degree_df[,c("Genes","Degree","Database","Age","Mut")]
+  alt_degree_df2 <- alt_degree_df[,c("Genes","Degree","Database","Age","CNV")]
+  alt_degree_df3 <- alt_degree_df[,c("Genes","Degree","Database","Age","WT")]
+  colnames(alt_degree_df1)[5] <- "Alt"
+  colnames(alt_degree_df2)[5] <- "Alt"
+  colnames(alt_degree_df3)[5] <- "Alt"
+  
+  alt_degree_df_melt <- rbind(alt_degree_df1, alt_degree_df2, alt_degree_df3)
+  
+  alt_degree_df_melt <- alt_degree_df_melt[!is.na(alt_degree_df_melt$Alt),]
+  return(alt_degree_df_melt)
+}
