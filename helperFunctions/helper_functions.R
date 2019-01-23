@@ -1368,10 +1368,10 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
   
   pdf(paste(database, "_Fig9.pdf", sep=""),
       width=7, height=3)
-  g <- ggplot(median_values, aes(x=Alt_simplified, y =Median_values))+
+  g <- ggplot(median_values, aes(x=Alt_simplified, y =log2(Median_values)))+
     geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
                position = position_dodge(width = 0.75))+
-    geom_linerange(aes(ymin=Lower, ymax=Upper, colour=Age),
+    geom_linerange(aes(ymin=log2(Lower), ymax=log2(Upper), colour=Age),
                    position = position_dodge(width = 0.75), size=0.75)+
     #ylim(0.25,1.75)+
     #coord_flip(ylim=c(0.35,1.75))+
@@ -1379,7 +1379,7 @@ reproduce_results_other_databases_fig_1_2 <- function(network, database){
     #geom_hline(yintercept = 1, size=0.5, colour="grey")+
     geom_point(aes(colour=Age, shape=Alt_simplified), size=4,
                position = position_dodge(width = 0.75))+
-    geom_linerange(aes(ymin=Lower, ymax=Upper, colour=Age),
+    geom_linerange(aes(ymin=log2(Lower), ymax=log2(Upper), colour=Age),
                    position = position_dodge(width = 0.75), size=0.75)+
     scale_colour_manual(values=c(UC=gg_color_hue(3)[1], EM=gg_color_hue(3)[2], MM=gg_color_hue(3)[3]))+
     ylab("Ratio out-degree/in-degree")+
